@@ -3712,7 +3712,9 @@ function bind(){
         if(DB.draft) return toast('Finish the workout in progress first');
         const s=DB.sessions.find(x=>x.id===t.dataset.id); if(!s) return;
         DB.draft=JSON.parse(JSON.stringify(s));
+        const back=restoreSkipped(DB.draft);
         DB.sessions=DB.sessions.filter(x=>x.id!==s.id);
+        if(back) setTimeout(()=>toast(`${back} skipped ${back===1?'exercise':'exercises'} added back`),50);
         save(); closeSheet(); view='today'; render(); window.scrollTo(0,0); return;
       }
       if(a==='confirmaddex'){
@@ -4039,6 +4041,25 @@ function exMenuSheet(i){
     <button class="btn primary full" data-act="renameex" data-ex="${i}">Save changes</button>
     <button class="btn danger full" data-act="removeex" data-ex="${i}" style="margin-top:10px">Remove from session</button></div>`);
   openSheet(c);
+}
+
+
+/* Saving drops exercises with no sets, so a reopened session would only show what
+   was done. Put the workout's skipped exercises back, empty, in their usual place. */
+function restoreSkipped(d){
+  const w=DB.workouts.find(x=>x.id===d.workoutId); if(!w) return 0;
+  const key=n=>String(n||'').trim().toLowerCase();
+  const has=new Set(d.exercises.map(e=>key(e.name)));
+  let added=0;
+  w.exercises.forEach((e,i)=>{
+    if(!e.name||has.has(key(e.name))) return;
+    let at=0;
+    for(let j=i-1;j>=0;j--){ const k=d.exercises.findIndex(x=>key(x.name)===key(w.exercises[j].name)); if(k>=0){ at=k+1; break; } }
+    d.exercises.splice(at,0,{name:e.name, note:e.note||'', target:e.target||'', kind:e.kind||'main', exNotes:'', plan:draftPlan(e,d.week)||null,
+      sets:Array.from({length:(draftPlan(e,d.week)||{}).sets||e.sets||DB.settings.defaultSets||3},()=>({w:'',r:'',rpe:''}))});
+    has.add(key(e.name)); added++;
+  });
+  return added;
 }
 
 function finishSession(){
