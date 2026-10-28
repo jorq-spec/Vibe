@@ -1458,7 +1458,7 @@ function viewBlock(){
    Activities are defined once; each day is a checklist you tick, with
    minutes / km / reps logged when the activity asks for it.
    ============================================================ */
-const X_TRACK=[['check','Tick off'],['time','Minutes'],['timedist','Minutes + km'],['count','Reps / rounds']];
+const X_TRACK=[['check','Tick off'],['sets','Sets × reps'],['time','Minutes'],['timedist','Minutes + km'],['count','Total reps / rounds']];
 const X_FREQ=[['daily','Every day'],['weekly','Times per week'],['free','When needed']];
 let xDay=null;            // day the checklist is showing
 function ensureExtra(){
@@ -1472,12 +1472,15 @@ const xEntry=(day,id)=>((DB.extra.log[day]||{})[id])||null;
 function xSetEntry(day,id,patch){
   const L=DB.extra.log; L[day]=L[day]||{};
   const cur=Object.assign({done:false}, L[day][id]||{}, patch);
-  const empty=!cur.done && !cur.min && !cur.km && !cur.count && !(cur.note||'').trim();
+  if(cur.sets) cur.sets=cur.sets.filter(x=>Number(x.r)>0);
+  if(cur.sets&&!cur.sets.length) delete cur.sets;
+  const empty=!cur.done && !cur.min && !cur.km && !cur.count && !cur.sets && !(cur.note||'').trim();
   if(empty) delete L[day][id]; else L[day][id]=cur;
   if(!Object.keys(L[day]).length) delete L[day];
   save();
 }
-const xDone=(day,id)=>{ const e=xEntry(day,id); return !!(e&&(e.done||e.min||e.km||e.count)); };
+const xDone=(day,id)=>{ const e=xEntry(day,id); return !!(e&&(e.done||e.min||e.km||e.count||(e.sets&&e.sets.length))); };
+const xSetsReps=e=>(e&&e.sets||[]).reduce((n,x)=>n+(+x.r||0),0);
 function xWeekDays(day){ const d=parseYmd(day); const dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow);
   return Array.from({length:7},(_,i)=>{ const t=new Date(d); t.setDate(d.getDate()+i); return ymd(t); }); }
 function xWeekCount(day,id){ return xWeekDays(day).filter(k=>xDone(k,id)).length; }
@@ -1499,6 +1502,8 @@ function xEntryText(a,e){
   if(e.min) p.push(`${fmt(e.min,1)} min`);
   if(e.km) p.push(`${Number(e.km)} km`);
   if(e.count) p.push(`${e.count} reps`);
+  if(e.sets&&e.sets.length){ const anyW=e.sets.some(x=>+x.w>0);
+    p.push(anyW?e.sets.map(x=>+x.w>0?`${fmt(x.w,1)}×${x.r}`:`${x.r}`).join(' · '):`${e.sets.map(x=>x.r).join(' · ')} reps`); }
   return p.join(' · ');
 }
 function xTodaySummary(day){ const list=xActive().filter(a=>a.freq!=='free'||xDone(day,a.id));
@@ -1519,7 +1524,7 @@ function viewExtraToday(){
   const sm=xTodaySummary(day);
   const rows=xGrouped(list).map(([cat,acts])=>`<div class="sectitle">${esc(cat)}</div>`+acts.map(a=>{
     const e=xEntry(day,a.id), done=xDone(day,a.id), st=xStatus(a,day), info=xEntryText(a,e);
-    const quick = a.track==='check' ? '' :
+    const quick = a.track==='check' ? '' : a.track==='sets' ? `<button class="btn sm" data-xa="entry" data-id="${a.id}">${e&&e.sets&&e.sets.length?`${e.sets.length} sets`:`${ICON.plus} Sets`}</button>` :
       `<div class="xq">${a.track==='count'
         ? `<input type="number" inputmode="numeric" placeholder="reps" value="${e&&e.count||''}" data-xf="count" data-id="${a.id}">`
         : `<input type="number" inputmode="decimal" placeholder="min" value="${e&&e.min||''}" data-xf="min" data-id="${a.id}">`}
@@ -1557,8 +1562,8 @@ function viewExtraHistory(){
   const cards=list.map(a=>{
     const last30=Array.from({length:30},(_,i)=>shiftDay(day,-i));
     const es=last30.map(k=>xEntry(k,a.id)).filter(Boolean).filter(e=>e.done||e.min||e.km||e.count);
-    const tot={n:es.length, min:es.reduce((s,e)=>s+(+e.min||0),0), km:es.reduce((s,e)=>s+(+e.km||0),0), count:es.reduce((s,e)=>s+(+e.count||0),0)};
-    const extra=[tot.min?`${fmt(tot.min,0)} min`:'', tot.km?`${fmt(tot.km,1)} km`:'', tot.count?`${tot.count} reps`:''].filter(Boolean).join(' · ');
+    const tot={n:es.length, min:es.reduce((s,e)=>s+(+e.min||0),0), km:es.reduce((s,e)=>s+(+e.km||0),0), count:es.reduce((s,e)=>s+(+e.count||0)+xSetsReps(e),0), sets:es.reduce((s,e)=>s+((e.sets||[]).length),0)};
+    const extra=[tot.min?`${fmt(tot.min,0)} min`:'', tot.km?`${fmt(tot.km,1)} km`:'', tot.sets?`${tot.sets} sets`:'', tot.count?`${tot.count} reps`:''].filter(Boolean).join(' · ');
     const st=xStatus(a,day);
     return `<div class="card" style="margin-bottom:10px">
       <div class="spread"><b style="font-size:15px">${esc(a.name)}</b><span class="tiny ${st.ok?'':'muted'}" style="${st.ok?'color:var(--good);font-weight:600':''}">${esc(st.txt)}</span></div>
@@ -1583,6 +1588,9 @@ function xEditSheet(id){
     <div class="field"><label>Category</label><div class="chips" id="xcats" style="flex-wrap:wrap">${DB.extra.cats.map(cn=>`<button type="button" class="chip" data-c="${esc(cn)}" aria-pressed="${cn===a.cat}">${esc(cn)}</button>`).join('')}
       <button type="button" class="chip" data-c="__new">+ New</button></div></div>
     <div class="field"><label>What do you log?</label><div class="chips" id="xtr" style="flex-wrap:wrap">${X_TRACK.map(([k,l])=>`<button type="button" class="chip" data-k="${k}" aria-pressed="${k===track}">${l}</button>`).join('')}</div></div>
+    <div id="xsetf" class="row" style="gap:10px;display:${track==='sets'?'flex':'none'}">
+      <div class="field" style="flex:1"><label>Sets</label><input type="number" inputmode="numeric" id="xds" min="1" max="20" value="${a.dsets||3}"></div>
+      <div class="field" style="flex:1"><label>Reps per set (optional)</label><input type="number" inputmode="numeric" id="xdr" value="${a.dreps||''}" placeholder="e.g. 15"></div></div>
     <div class="field"><label>How often</label><div class="chips" id="xfr" style="flex-wrap:wrap">${X_FREQ.map(([k,l])=>`<button type="button" class="chip" data-k="${k}" aria-pressed="${k===freq}">${l}</button>`).join('')}</div>
       <div id="xpw" style="display:${freq==='weekly'?'flex':'none'};align-items:center;gap:8px;margin-top:4px"><input type="number" id="xpwn" min="1" max="14" value="${a.perWeek||3}" style="width:80px;text-align:center"><span class="tiny muted">times per week</span></div></div>
     <div class="field"><label>Target (optional)</label><input type="text" id="xt" value="${esc(a.target||'')}" placeholder="e.g. 3 × 15, 30 min zone 2, 5 km"></div>
@@ -1594,7 +1602,7 @@ function xEditSheet(id){
   const sh=openSheet(c);
   let cat=a.cat;
   const pickGroup=(sel,fn)=>sh.querySelectorAll(sel+' [data-k]').forEach(b=>b.onclick=()=>{ sh.querySelectorAll(sel+' [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); fn(b.dataset.k); });
-  pickGroup('#xtr',k=>track=k);
+  pickGroup('#xtr',k=>{ track=k; sh.querySelector('#xsetf').style.display=k==='sets'?'flex':'none'; });
   pickGroup('#xfr',k=>{ freq=k; sh.querySelector('#xpw').style.display=k==='weekly'?'flex':'none'; });
   sh.querySelectorAll('#xcats [data-c]').forEach(b=>b.onclick=()=>{
     if(b.dataset.c==='__new'){ const n=(prompt('New category','')||'').trim(); if(!n) return;
@@ -1606,7 +1614,8 @@ function xEditSheet(id){
   sh.querySelector('#xsave').onclick=()=>{
     const name=sh.querySelector('#xn').value.trim(); if(!name){ sh.querySelector('#xn').focus(); toast('Give it a name first'); return; }
     const data={name,cat:cat||DB.extra.cats[0],track,freq,perWeek:Math.max(1,parseInt(sh.querySelector('#xpwn').value)||3),
-      target:sh.querySelector('#xt').value.trim(), note:sh.querySelector('#xno').value.trim()};
+      target:sh.querySelector('#xt').value.trim(), note:sh.querySelector('#xno').value.trim(),
+      dsets:Math.max(1,parseInt(sh.querySelector('#xds').value)||3), dreps:parseInt(sh.querySelector('#xdr').value)||null};
     if(id) Object.assign(a,data); else DB.extra.acts.push({id:uid(),created:todayKey(),...data});
     save(); closeSheet(); render(); toast(id?'Saved':'Activity added');
   };
@@ -1626,15 +1635,31 @@ function xEntrySheet(id){
     ${a.note?`<div class="card" style="margin-bottom:12px;white-space:pre-line;font-size:14px">${esc(a.note)}</div>`:''}
     ${a.track==='time'||a.track==='timedist'?`<div class="row" style="gap:10px"><div class="field" style="flex:1"><label>Minutes</label><input type="number" inputmode="decimal" id="em" value="${e.min||''}"></div>
       ${a.track==='timedist'?`<div class="field" style="flex:1"><label>Distance (km)</label><input type="number" inputmode="decimal" step="0.1" id="ek" value="${e.km||''}"></div>`:''}</div>`:''}
+    ${a.track==='sets'?`<div class="setgrid head"><div></div><div>KG (optional)</div><div>REPS</div><div></div></div><div id="xsg"></div>
+      <button type="button" class="btn sm" id="xaddset" style="margin:2px 0 14px">${ICON.plus} Set</button>`:''}
     ${a.track==='count'?`<div class="field"><label>Reps / rounds</label><input type="number" inputmode="numeric" id="ec" value="${e.count||''}"></div>`:''}
     <div class="field"><label>Note</label><textarea id="ent" placeholder="How it felt, pain level, pace…">${esc(e.note||'')}</textarea></div>
     <button class="btn primary full" id="esave">Mark done and save</button>
     ${xDone(day,id)?`<button class="btn full" id="eundo" style="margin-top:10px">Not done</button>`:''}
     <button class="btn ghost full" id="eedit" style="margin-top:10px">Edit activity</button></div>`);
   const sh=openSheet(c);
+  /* sets: start from what was logged, else the activity's default number of empty sets */
+  let sets=(e.sets&&e.sets.length)?e.sets.map(x=>({...x})):Array.from({length:a.dsets||3},()=>({w:'',r:''}));
+  const drawSets=()=>{ const g=sh.querySelector('#xsg'); if(!g) return;
+    g.innerHTML=sets.map((x,j)=>`<div class="setgrid"><div class="sn">${j+1}</div>
+      <input type="number" inputmode="decimal" step="0.5" placeholder="kg" value="${x.w??''}" data-j="${j}" data-k="w">
+      <input type="number" inputmode="numeric" placeholder="${a.dreps||'reps'}" value="${x.r??''}" data-j="${j}" data-k="r">
+      <button type="button" class="del" data-del="${j}" aria-label="Remove set ${j+1}">×</button></div>`).join('');
+    g.querySelectorAll('input').forEach(i=>i.oninput=()=>{ sets[+i.dataset.j][i.dataset.k]=i.value; });
+    g.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ sets.splice(+b.dataset.del,1); drawSets(); }); };
+  drawSets();
+  const as=sh.querySelector('#xaddset'); if(as) as.onclick=()=>{ const last=sets[sets.length-1]; sets.push({w:last?last.w:'',r:''}); drawSets(); };
   const num=s=>{ const v=sh.querySelector(s); return v&&v.value!==''?+String(v.value).replace(',','.'):undefined; };
-  sh.querySelector('#esave').onclick=()=>{ xSetEntry(day,id,{done:true,min:num('#em'),km:num('#ek'),count:num('#ec'),note:sh.querySelector('#ent').value.trim()}); closeSheet(); render(); toast('Logged'); };
-  const u=sh.querySelector('#eundo'); if(u) u.onclick=()=>{ xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined}); closeSheet(); render(); };
+  sh.querySelector('#esave').onclick=()=>{
+    /* sets with no reps typed in are left out */
+    const S=a.track==='sets'?sets.map(x=>({w:x.w===''||x.w==null?undefined:+String(x.w).replace(',','.'),r:+x.r||0})).filter(x=>x.r>0):undefined;
+    xSetEntry(day,id,{done:true,min:num('#em'),km:num('#ek'),count:num('#ec'),sets:S&&S.length?S:undefined,note:sh.querySelector('#ent').value.trim()}); closeSheet(); render(); toast('Logged'); };
+  const u=sh.querySelector('#eundo'); if(u) u.onclick=()=>{ xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined,sets:undefined}); closeSheet(); render(); };
   sh.querySelector('#eedit').onclick=()=>xEditSheet(id);
 }
 
@@ -1650,7 +1675,7 @@ function bindExtra(){
     if(a==='entry') return xEntrySheet(t.dataset.id);
     if(a==='goday'){ xDay=t.dataset.k===todayKey()?null:t.dataset.k; view='xtoday'; render(); window.scrollTo(0,0); return; }
     if(a==='tick'){ const id=t.dataset.id;
-      if(xDone(day,id)) xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined});
+      if(xDone(day,id)) xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined,sets:undefined});
       else xSetEntry(day,id,{done:true});
       render(); return; }
   });
