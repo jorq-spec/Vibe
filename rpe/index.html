@@ -229,6 +229,24 @@ hr.sep{border:0;border-top:1px solid var(--line-soft);margin:14px 0}
 .exeditfields input:last-of-type{margin-bottom:0}
 
 /* ---------- home / mode switch ---------- */
+.xnav{display:flex;align-items:center;gap:8px;margin:2px 0 6px}
+.xnav-d{flex:1;text-align:center;background:none;border:0;color:var(--text)}
+.xnav-d b{display:block;font-size:16px}.xnav-d span{font-size:12.5px;color:var(--muted)}
+.xrow{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r);padding:10px 12px;margin-bottom:8px}
+.xrow.done{border-color:var(--accent-dim)}
+.xck{flex:none;width:34px;height:34px;border-radius:10px;border:2px solid var(--line);background:var(--surface2);color:var(--on-accent);font-size:18px;font-weight:800;display:grid;place-items:center}
+.xck[aria-pressed="true"]{background:var(--accent);border-color:var(--accent)}
+.xbody{flex:1;min-width:0;text-align:left;background:none;border:0;color:var(--text);padding:2px 0}
+.xbody b{display:block;font-size:15.5px;font-weight:600}
+.xrow.done .xbody b{color:var(--muted)}
+.xbody span{display:block;font-size:12.5px;color:var(--muted);margin-top:1px}
+.xbody .xst{color:var(--faint)}.xbody .xst.ok{color:var(--good);font-weight:600}
+.xq{display:flex;gap:6px;flex:none}
+.xq input{width:58px;padding:9px 4px;text-align:center;font-size:15px;border-radius:9px}
+.xdots{display:grid;grid-template-columns:repeat(14,1fr);gap:4px;margin:10px 0 8px}
+.xdots i{display:block;aspect-ratio:1;border-radius:4px;background:var(--surface2);border:1px solid var(--line-soft)}
+.xdots i.on{background:var(--accent);border-color:var(--accent)}
+.xdots i.t{outline:2px solid var(--accent-text);outline-offset:1px}
 .modecard{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface);
   border:1px solid var(--line-soft);border-radius:var(--r);padding:16px;margin-bottom:10px}
 .modecard.on{border-color:var(--accent-dim)}
@@ -920,6 +938,7 @@ const ICON={
   sun:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/></svg>',
   moon:'<svg viewBox="0 0 24 24"><path d="M20.5 13.2A8.3 8.3 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>',
   plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  check:'<svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 12.5l3 3 5-6"/></svg>',
   home:'<svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-6h4v6"/></svg>',
   search:'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>',
   book:'<svg viewBox="0 0 24 24"><path d="M5 4h11a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2V4z"/><path d="M5 18a2 2 0 0 1 2-2h11"/></svg>',
@@ -961,7 +980,9 @@ function confirmSheet(title, body, okLabel, onOk, danger){
    Render: shell
    ============================================================ */
 function renderTabs(){
-  const tabs= mode==='food'
+  const tabs= mode==='extra'
+    ? [['home','Home',ICON.home],['xtoday','Checklist',ICON.check],['xlist','Activities',ICON.list],['xhist','History',ICON.chart]]
+    : mode==='food'
     ? [['home','Home',ICON.home],['foodlog','Log',ICON.today],['foodsearch','Search',ICON.search],
        ['foodrecipes','Recipes',ICON.book],['foodprogress','Progress',ICON.chart]]
     : [['home','Home',ICON.home],['today','Today',ICON.today],['calendar','Calendar',ICON.cal],
@@ -990,7 +1011,7 @@ function topbar(title, sub, opts={}){
 }
 
 function render(){
-  syncAliases(); ensureFood();
+  syncAliases(); ensureFood(); ensureExtra();
   renderTabs();
   const a=$('#app');
   if(view==='today') a.innerHTML = viewToday();
@@ -1002,8 +1023,16 @@ function render(){
   else if(view==='foodsearch') a.innerHTML = viewFoodSearch();
   else if(view==='foodrecipes') a.innerHTML = openRecipe ? viewRecipeEdit() : viewFoodRecipes();
   else if(view==='foodprogress') a.innerHTML = viewFoodProgress();
+  else if(view==='xtoday') a.innerHTML = viewExtraToday();
+  else if(view==='xlist') a.innerHTML = viewExtraList();
+  else if(view==='xhist') a.innerHTML = viewExtraHistory();
   const fab=$('#fab');
-  if(mode==='food'){
+  $('#tabs').style.gridTemplateColumns = `repeat(${$('#tabs').children.length},1fr)`;
+  if(mode==='extra'){
+    fab.hidden = view!=='xlist';
+    fab.onclick = ()=>xEditSheet(null);
+    $('#fabLbl').textContent='Add activity';
+  } else if(mode==='food'){
     fab.hidden = view!=='foodlog';
     fab.onclick = ()=>{ view='foodsearch'; render(); window.scrollTo(0,0); };
     $('#fabLbl').textContent='Add food';
@@ -1306,6 +1335,8 @@ function daySheet(k){
       <button class="btn primary" data-act="plan" data-k="${k}">Add</button>
     </div>`:'<p class="tiny muted">Create a workout first.</p>'}
     ${doneHtml}
+    ${(()=>{ ensureExtra(); const L=DB.extra.log[k]||{}; const items=Object.keys(L).map(xAct).filter(Boolean).filter(a=>xDone(k,a.id));
+      return items.length?`<div class="sectitle">Rehab &amp; cardio</div><p class="tiny" style="margin:0 2px">${items.map(a=>esc(a.name)+(xEntryText(a,L[a.id])?` <span class="muted">(${esc(xEntryText(a,L[a.id]))})</span>`:'')).join(', ')}</p>`:''; })()}
   </div>`);
   openSheet(c);
 }
@@ -1422,6 +1453,216 @@ function viewBlock(){
 /* ============================================================
    HOME — switches between Training and the (future) food log
    ============================================================ */
+/* ============================================================
+   REHAB & CARDIO — a third part of the app, next to training and food.
+   Activities are defined once; each day is a checklist you tick, with
+   minutes / km / reps logged when the activity asks for it.
+   ============================================================ */
+const X_TRACK=[['check','Tick off'],['time','Minutes'],['timedist','Minutes + km'],['count','Reps / rounds']];
+const X_FREQ=[['daily','Every day'],['weekly','Times per week'],['free','When needed']];
+let xDay=null;            // day the checklist is showing
+function ensureExtra(){
+  const x=DB.extra=DB.extra||{};
+  x.acts=x.acts||[]; x.log=x.log||{};
+  x.cats=x.cats&&x.cats.length?x.cats:['Rehab','Cardio','Mobility'];
+  return x;
+}
+const xAct=id=>DB.extra.acts.find(a=>a.id===id);
+const xEntry=(day,id)=>((DB.extra.log[day]||{})[id])||null;
+function xSetEntry(day,id,patch){
+  const L=DB.extra.log; L[day]=L[day]||{};
+  const cur=Object.assign({done:false}, L[day][id]||{}, patch);
+  const empty=!cur.done && !cur.min && !cur.km && !cur.count && !(cur.note||'').trim();
+  if(empty) delete L[day][id]; else L[day][id]=cur;
+  if(!Object.keys(L[day]).length) delete L[day];
+  save();
+}
+const xDone=(day,id)=>{ const e=xEntry(day,id); return !!(e&&(e.done||e.min||e.km||e.count)); };
+function xWeekDays(day){ const d=parseYmd(day); const dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow);
+  return Array.from({length:7},(_,i)=>{ const t=new Date(d); t.setDate(d.getDate()+i); return ymd(t); }); }
+function xWeekCount(day,id){ return xWeekDays(day).filter(k=>xDone(k,id)).length; }
+function xStreak(day,id){ let n=0, k=day; if(!xDone(k,id)) k=shiftDay(k,-1); while(xDone(k,id)){ n++; k=shiftDay(k,-1); } return n; }
+function xActive(){ return DB.extra.acts.filter(a=>!a.archived); }
+function xGrouped(list){
+  const cats=[...DB.extra.cats]; list.forEach(a=>{ if(!cats.includes(a.cat)) cats.push(a.cat); });
+  return cats.map(c=>[c, list.filter(a=>a.cat===c)]).filter(g=>g[1].length);
+}
+function xFreqLabel(a){ return a.freq==='daily'?'every day':a.freq==='weekly'?`${a.perWeek||3}× per week`:'when needed'; }
+function xStatus(a,day){
+  if(a.freq==='weekly'){ const n=xWeekCount(day,a.id), g=a.perWeek||3; return {txt:`${n}/${g} this week`, ok:n>=g}; }
+  if(a.freq==='daily'){ const s=xStreak(day,a.id); return {txt:s>1?`${s} days in a row`:'every day', ok:false}; }
+  return {txt:'when needed', ok:false};
+}
+function xEntryText(a,e){
+  if(!e) return '';
+  const p=[];
+  if(e.min) p.push(`${fmt(e.min,1)} min`);
+  if(e.km) p.push(`${Number(e.km)} km`);
+  if(e.count) p.push(`${e.count} reps`);
+  return p.join(' · ');
+}
+function xTodaySummary(day){ const list=xActive().filter(a=>a.freq!=='free'||xDone(day,a.id));
+  return {done:list.filter(a=>xDone(day,a.id)).length, total:list.length}; }
+
+function viewExtraToday(){
+  ensureExtra();
+  const day=xDay||todayKey();
+  const list=xActive();
+  const nav=`<div class="xnav">
+      <button class="iconbtn" data-xa="day" data-v="-1" aria-label="Previous day">${ICON.back}</button>
+      <button class="xnav-d" data-xa="today"><b>${esc(prettyDate(day))}</b><span>${esc(fullDate(day))}</span></button>
+      <button class="iconbtn" data-xa="day" data-v="1" aria-label="Next day" style="transform:scaleX(-1)">${ICON.back}</button></div>`;
+  if(!list.length) return topbar('Rehab & cardio','Your daily checklist') + `<div class="wrap">
+    <div class="empty"><h3>Nothing here yet</h3>
+    <p>Add the things you do besides lifting — rehab exercises, cardio, stretching. Tick them off each day, and log minutes or km when it matters.</p>
+    <button class="btn primary" data-xa="new">${ICON.plus} Add activity</button></div></div>`;
+  const sm=xTodaySummary(day);
+  const rows=xGrouped(list).map(([cat,acts])=>`<div class="sectitle">${esc(cat)}</div>`+acts.map(a=>{
+    const e=xEntry(day,a.id), done=xDone(day,a.id), st=xStatus(a,day), info=xEntryText(a,e);
+    const quick = a.track==='check' ? '' :
+      `<div class="xq">${a.track==='count'
+        ? `<input type="number" inputmode="numeric" placeholder="reps" value="${e&&e.count||''}" data-xf="count" data-id="${a.id}">`
+        : `<input type="number" inputmode="decimal" placeholder="min" value="${e&&e.min||''}" data-xf="min" data-id="${a.id}">`}
+        ${a.track==='timedist'?`<input type="number" inputmode="decimal" step="0.1" placeholder="km" value="${e&&e.km||''}" data-xf="km" data-id="${a.id}">`:''}</div>`;
+    return `<div class="xrow${done?' done':''}">
+      <button class="xck" data-xa="tick" data-id="${a.id}" aria-pressed="${done}" aria-label="${done?'Mark not done':'Mark done'}: ${esc(a.name)}">${done?'✓':''}</button>
+      <button class="xbody" data-xa="entry" data-id="${a.id}"><b>${esc(a.name)}</b>
+        ${[a.target, info].filter(Boolean).length?`<span>${esc([a.target, info].filter(Boolean).join(' · '))}</span>`:''}
+        <span class="xst${st.ok?' ok':''}">${esc(st.txt)}${e&&e.note?' · note':''}</span></button>
+      ${quick}</div>`; }).join('')).join('');
+  return topbar('Rehab & cardio', sm.total?`${sm.done} of ${sm.total} done`:'Your daily checklist') + `<div class="wrap">${nav}${rows}
+    <button class="btn ghost full" data-xa="new" style="margin-top:12px">${ICON.plus} Add activity</button>
+    <p class="tiny muted" style="margin:10px 2px 0">Tap the box to tick something off, or the name to log time, distance or a note.</p></div>`;
+}
+
+function viewExtraList(){
+  ensureExtra();
+  const all=DB.extra.acts;
+  const act=all.filter(a=>!a.archived), arch=all.filter(a=>a.archived);
+  const row=a=>`<button class="item" data-xa="edit" data-id="${a.id}">
+      <div class="body"><b>${esc(a.name)}</b><span>${esc([X_TRACK.find(t=>t[0]===a.track)[1], xFreqLabel(a), a.target].filter(Boolean).join(' · '))}</span></div>
+      <span class="chev">${ICON.chev}</span></button>`;
+  return topbar('Activities','What goes on your checklist') + `<div class="wrap">
+    ${act.length?xGrouped(act).map(([c,l])=>`<div class="sectitle">${esc(c)}</div>${l.map(row).join('')}`).join(''):'<p class="tiny muted">No activities yet.</p>'}
+    <button class="btn ghost full" data-xa="new" style="margin-top:8px">${ICON.plus} Add activity</button>
+    ${arch.length?`<div class="sectitle">Paused</div>${arch.map(row).join('')}`:''}
+  </div>`;
+}
+
+function viewExtraHistory(){
+  ensureExtra();
+  const day=todayKey(), list=DB.extra.acts.filter(a=>!a.archived||Object.values(DB.extra.log).some(d=>d[a.id]));
+  if(!list.length) return topbar('History') + `<div class="wrap"><div class="empty"><h3>No history yet</h3><p>Tick something off and it shows up here.</p></div></div>`;
+  const days=Array.from({length:28},(_,i)=>shiftDay(day,i-27));
+  const cards=list.map(a=>{
+    const last30=Array.from({length:30},(_,i)=>shiftDay(day,-i));
+    const es=last30.map(k=>xEntry(k,a.id)).filter(Boolean).filter(e=>e.done||e.min||e.km||e.count);
+    const tot={n:es.length, min:es.reduce((s,e)=>s+(+e.min||0),0), km:es.reduce((s,e)=>s+(+e.km||0),0), count:es.reduce((s,e)=>s+(+e.count||0),0)};
+    const extra=[tot.min?`${fmt(tot.min,0)} min`:'', tot.km?`${fmt(tot.km,1)} km`:'', tot.count?`${tot.count} reps`:''].filter(Boolean).join(' · ');
+    const st=xStatus(a,day);
+    return `<div class="card" style="margin-bottom:10px">
+      <div class="spread"><b style="font-size:15px">${esc(a.name)}</b><span class="tiny ${st.ok?'':'muted'}" style="${st.ok?'color:var(--good);font-weight:600':''}">${esc(st.txt)}</span></div>
+      <div class="xdots" aria-label="Last 4 weeks">${days.map(k=>`<i class="${xDone(k,a.id)?'on':''}${k===day?' t':''}" title="${esc(prettyDate(k))}"></i>`).join('')}</div>
+      <div class="tiny muted">Last 30 days: ${tot.n} ${tot.n===1?'time':'times'}${extra?' · '+extra:''}</div></div>`;
+  }).join('');
+  const recent=Object.keys(DB.extra.log).sort().reverse().slice(0,14).map(k=>{
+    const items=Object.entries(DB.extra.log[k]).map(([id,e])=>{ const a=xAct(id); if(!a) return null;
+      const t=xEntryText(a,e); return `${a.name}${t?` (${t})`:''}`; }).filter(Boolean);
+    return items.length?`<button class="item" data-xa="goday" data-k="${k}"><div class="body"><b>${esc(prettyDate(k))}</b><span style="white-space:normal">${esc(items.join(', '))}</span></div><span class="chev">${ICON.chev}</span></button>`:'';
+  }).join('');
+  return topbar('History','Last 4 weeks') + `<div class="wrap">${cards}
+    ${recent?`<div class="sectitle">Recent days</div>${recent}`:''}</div>`;
+}
+
+function xEditSheet(id){
+  ensureExtra();
+  const a=id?xAct(id):{name:'',cat:DB.extra.cats[0],track:'check',freq:'daily',perWeek:3,target:'',note:''};
+  let track=a.track, freq=a.freq;
+  const c=el(`<div><h3>${id?'Edit activity':'New activity'}</h3><p class="sh-sub">Something you want to tick off or log alongside your training.</p>
+    <div class="field"><label>Name</label><input type="text" id="xn" value="${esc(a.name)}" placeholder="e.g. Knee rehab, Easy run, Hip stretches"></div>
+    <div class="field"><label>Category</label><div class="chips" id="xcats" style="flex-wrap:wrap">${DB.extra.cats.map(cn=>`<button type="button" class="chip" data-c="${esc(cn)}" aria-pressed="${cn===a.cat}">${esc(cn)}</button>`).join('')}
+      <button type="button" class="chip" data-c="__new">+ New</button></div></div>
+    <div class="field"><label>What do you log?</label><div class="chips" id="xtr" style="flex-wrap:wrap">${X_TRACK.map(([k,l])=>`<button type="button" class="chip" data-k="${k}" aria-pressed="${k===track}">${l}</button>`).join('')}</div></div>
+    <div class="field"><label>How often</label><div class="chips" id="xfr" style="flex-wrap:wrap">${X_FREQ.map(([k,l])=>`<button type="button" class="chip" data-k="${k}" aria-pressed="${k===freq}">${l}</button>`).join('')}</div>
+      <div id="xpw" style="display:${freq==='weekly'?'flex':'none'};align-items:center;gap:8px;margin-top:4px"><input type="number" id="xpwn" min="1" max="14" value="${a.perWeek||3}" style="width:80px;text-align:center"><span class="tiny muted">times per week</span></div></div>
+    <div class="field"><label>Target (optional)</label><input type="text" id="xt" value="${esc(a.target||'')}" placeholder="e.g. 3 × 15, 30 min zone 2, 5 km"></div>
+    <div class="field"><label>How to do it (optional)</label><textarea id="xno" placeholder="Cues, from the physio, what to watch out for">${esc(a.note||'')}</textarea></div>
+    <button class="btn primary full" id="xsave">${id?'Save changes':'Add activity'}</button>
+    ${id?`<div class="row" style="margin-top:10px"><button class="btn full" id="xarch">${a.archived?'Resume':'Pause'}</button><button class="btn danger full" id="xdel">Delete</button></div>
+      <p class="tiny muted" style="margin:8px 2px 0">Pause hides it from the checklist but keeps the history. Delete removes the history too.</p>`:''}
+  </div>`);
+  const sh=openSheet(c);
+  let cat=a.cat;
+  const pickGroup=(sel,fn)=>sh.querySelectorAll(sel+' [data-k]').forEach(b=>b.onclick=()=>{ sh.querySelectorAll(sel+' [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); fn(b.dataset.k); });
+  pickGroup('#xtr',k=>track=k);
+  pickGroup('#xfr',k=>{ freq=k; sh.querySelector('#xpw').style.display=k==='weekly'?'flex':'none'; });
+  sh.querySelectorAll('#xcats [data-c]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.c==='__new'){ const n=(prompt('New category','')||'').trim(); if(!n) return;
+      if(!DB.extra.cats.includes(n)) DB.extra.cats.push(n);
+      const nb=el(`<button type="button" class="chip" data-c="${esc(n)}">${esc(n)}</button>`); b.before(nb);
+      nb.onclick=()=>{ cat=n; sh.querySelectorAll('#xcats [data-c]').forEach(x=>x.setAttribute('aria-pressed',x===nb)); }; nb.onclick(); return; }
+    cat=b.dataset.c; sh.querySelectorAll('#xcats [data-c]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
+  if(!id) setTimeout(()=>sh.querySelector('#xn').focus(),120);
+  sh.querySelector('#xsave').onclick=()=>{
+    const name=sh.querySelector('#xn').value.trim(); if(!name){ sh.querySelector('#xn').focus(); toast('Give it a name first'); return; }
+    const data={name,cat:cat||DB.extra.cats[0],track,freq,perWeek:Math.max(1,parseInt(sh.querySelector('#xpwn').value)||3),
+      target:sh.querySelector('#xt').value.trim(), note:sh.querySelector('#xno').value.trim()};
+    if(id) Object.assign(a,data); else DB.extra.acts.push({id:uid(),created:todayKey(),...data});
+    save(); closeSheet(); render(); toast(id?'Saved':'Activity added');
+  };
+  if(id){
+    sh.querySelector('#xarch').onclick=()=>{ a.archived=!a.archived; save(); closeSheet(); render(); toast(a.archived?'Paused':'Back on the checklist'); };
+    sh.querySelector('#xdel').onclick=()=>confirmSheet('Delete this activity?',`"${a.name}" and everything you logged for it will be removed.`,'Delete',()=>{
+      DB.extra.acts=DB.extra.acts.filter(x=>x.id!==id);
+      Object.keys(DB.extra.log).forEach(k=>{ delete DB.extra.log[k][id]; if(!Object.keys(DB.extra.log[k]).length) delete DB.extra.log[k]; });
+      save(); render(); toast('Deleted'); }, true);
+  }
+}
+
+function xEntrySheet(id){
+  const a=xAct(id); if(!a) return;
+  const day=xDay||todayKey(), e=xEntry(day,id)||{};
+  const c=el(`<div><h3>${esc(a.name)}</h3><p class="sh-sub">${esc(fullDate(day))}${a.target?' · target '+esc(a.target):''}</p>
+    ${a.note?`<div class="card" style="margin-bottom:12px;white-space:pre-line;font-size:14px">${esc(a.note)}</div>`:''}
+    ${a.track==='time'||a.track==='timedist'?`<div class="row" style="gap:10px"><div class="field" style="flex:1"><label>Minutes</label><input type="number" inputmode="decimal" id="em" value="${e.min||''}"></div>
+      ${a.track==='timedist'?`<div class="field" style="flex:1"><label>Distance (km)</label><input type="number" inputmode="decimal" step="0.1" id="ek" value="${e.km||''}"></div>`:''}</div>`:''}
+    ${a.track==='count'?`<div class="field"><label>Reps / rounds</label><input type="number" inputmode="numeric" id="ec" value="${e.count||''}"></div>`:''}
+    <div class="field"><label>Note</label><textarea id="ent" placeholder="How it felt, pain level, pace…">${esc(e.note||'')}</textarea></div>
+    <button class="btn primary full" id="esave">Mark done and save</button>
+    ${xDone(day,id)?`<button class="btn full" id="eundo" style="margin-top:10px">Not done</button>`:''}
+    <button class="btn ghost full" id="eedit" style="margin-top:10px">Edit activity</button></div>`);
+  const sh=openSheet(c);
+  const num=s=>{ const v=sh.querySelector(s); return v&&v.value!==''?+String(v.value).replace(',','.'):undefined; };
+  sh.querySelector('#esave').onclick=()=>{ xSetEntry(day,id,{done:true,min:num('#em'),km:num('#ek'),count:num('#ec'),note:sh.querySelector('#ent').value.trim()}); closeSheet(); render(); toast('Logged'); };
+  const u=sh.querySelector('#eundo'); if(u) u.onclick=()=>{ xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined}); closeSheet(); render(); };
+  sh.querySelector('#eedit').onclick=()=>xEditSheet(id);
+}
+
+function bindExtra(){
+  const app=$('#app');
+  app.addEventListener('click',e=>{
+    const t=e.target.closest('[data-xa]'); if(!t) return;
+    const a=t.dataset.xa, day=xDay||todayKey();
+    if(a==='day'){ xDay=shiftDay(day,+t.dataset.v); render(); return; }
+    if(a==='today'){ xDay=null; render(); return; }
+    if(a==='new') return xEditSheet(null);
+    if(a==='edit') return xEditSheet(t.dataset.id);
+    if(a==='entry') return xEntrySheet(t.dataset.id);
+    if(a==='goday'){ xDay=t.dataset.k===todayKey()?null:t.dataset.k; view='xtoday'; render(); window.scrollTo(0,0); return; }
+    if(a==='tick'){ const id=t.dataset.id;
+      if(xDone(day,id)) xSetEntry(day,id,{done:false,min:undefined,km:undefined,count:undefined});
+      else xSetEntry(day,id,{done:true});
+      render(); return; }
+  });
+  app.addEventListener('change',e=>{
+    const t=e.target; if(!t.dataset||!t.dataset.xf) return;
+    const v=t.value===''?undefined:+String(t.value).replace(',','.');
+    const day=xDay||todayKey(), p={[t.dataset.xf]:v};
+    if(v) p.done=true;
+    xSetEntry(day,t.dataset.id,p); render();
+  });
+}
+
 function viewHome(){
   const b=activeBlock();
   const todayDone=DB.sessions.filter(s=>s.date===todayKey()).length;
@@ -1436,6 +1677,11 @@ function viewHome(){
       <div class="body"><b>🍽 Food log</b>
         <span>${t.kcal?`${fmtK(t.kcal)} of ${fmtK(g.kcal)} kcal today`:'Calories, macros, recipes and weight'}</span></div>
       ${mode==='food'?'<span class="pill on">Current</span>':''}
+    </button>
+    <button class="modecard${mode==='extra'?' on':''}" data-act="goextra">
+      <div class="body"><b>${ICON.check} Rehab &amp; cardio</b>
+        <span>${(()=>{ ensureExtra(); const m=xTodaySummary(todayKey()); return m.total?`${m.done} of ${m.total} done today`:'Checklist for rehab, cardio, mobility'; })()}</span></div>
+      ${mode==='extra'?'<span class="pill on">Current</span>':''}
     </button>
   </div>`;
 }
@@ -3228,6 +3474,7 @@ function bind(){
       save(); render(); toast('Key saved'); return;
     }
 
+    if(a==='goextra'){ mode='extra'; DB.settings.appMode='extra'; save(); xDay=null; view='xtoday'; render(); window.scrollTo(0,0); return; }
     if(a==='gofood'){ mode='food'; DB.settings.appMode='food'; save(); view='foodlog'; render(); return; }
     if(a==='preset'){
       const ex=exByKey(t.dataset.key); if(!ex) return;
@@ -4138,8 +4385,10 @@ document.body.addEventListener('keydown', e=>{
   DB.v=3;
   ensureFood();
   foodDate=todayKey();
-  mode = DB.settings.appMode==='food' ? 'food' : 'trening';
+  mode = ['food','extra'].includes(DB.settings.appMode) ? DB.settings.appMode : 'trening';
   if(mode==='food') view='foodlog';
+  ensureExtra(); bindExtra();
+  if(mode==='extra') view='xtoday';
   if(wasOldShape) Store.flush(DB);
   applyTheme();
   render();
