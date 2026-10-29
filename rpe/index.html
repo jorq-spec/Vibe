@@ -845,14 +845,42 @@ function planFor(ex, week){
   }
   return at(week);
 }
-/* Best estimated 1RM this lift has ever shown, used to price the target. */
+/* A lift can be reset after an injury: sessions logged before the reset stop
+   counting toward suggestions, optionally with a hand-set starting max. The
+   history itself and the progress charts are left alone. */
+const sugKey=n=>String(n||'').trim().toLowerCase();
+function sugReset(name){ return (DB.sugReset||{})[sugKey(name)]||null; }
+function countsForSug(s, name){ const r=sugReset(name); return !r || !(r.ids||[]).includes(s.id); }
+/* Best estimated 1RM this lift has shown (since any reset), used to price the target. */
 function bestE1RM(name){
-  let best=0;
-  DB.sessions.forEach(s=>(s.exercises||[]).forEach(e=>{
+  const r=sugReset(name);
+  let best=r&&Number(r.start)>0?Number(r.start):0;
+  DB.sessions.forEach(s=>{ if(!countsForSug(s,name)) return; (s.exercises||[]).forEach(e=>{
     if(e.name.toLowerCase()!==String(name).toLowerCase()) return;
     const st=exStats(e); if(st.best && st.best>best) best=st.best;
-  }));
+  }); });
   return best||null;
+}
+function resetSugSheet(name){
+  const r=sugReset(name), cur=bestE1RM(name);
+  let all=0; DB.sessions.forEach(s=>(s.exercises||[]).forEach(e=>{ if(sugKey(e.name)===sugKey(name)){ const b=exStats(e).best; if(b>all) all=b; } }));
+  const c=el(`<div><h3>Weight suggestion</h3><p class="sh-sub">${esc(name)}</p>
+    <div class="card" style="margin-bottom:14px;font-size:14px">${cur?`Suggestions are based on an estimated max of <b>${fmt(cur,1)} kg</b>.`:'No suggestion right now — it comes back once you log sets.'}
+      ${r?`<br><span class="muted">Reset ${esc(prettyDate(r.date)).toLowerCase()}${all?` · all-time est. max ${fmt(all,1)} kg`:''}${r.why?` · ${esc(r.why)}`:''}</span>`:''}</div>
+    <p class="tiny muted" style="margin:0 2px 12px">Resetting ignores everything you've lifted on this exercise so far when suggesting weights, so an injury or a long break doesn't push you toward your old numbers. Your history and charts stay as they are.</p>
+    <div class="field"><label>Start from est. max (kg, optional)</label><input type="number" inputmode="decimal" step="2.5" id="rsstart" placeholder="${all?'e.g. '+fmt(Math.round(all*0.7/2.5)*2.5,1):'leave empty'}"></div>
+    <p class="tiny muted" style="margin:-6px 2px 12px">Leave empty and there's no suggestion until you've logged new sets — they then set the level.${all?` 70% of your old max would be ${fmt(Math.round(all*0.7/2.5)*2.5,1)} kg.`:''}</p>
+    <div class="field"><label>Reason (optional)</label><input type="text" id="rswhy" placeholder="e.g. shoulder, back after a break"></div>
+    <button class="btn primary full" id="rsgo">Reset suggestion</button>
+    ${r?`<button class="btn full" id="rsundo" style="margin-top:10px">Undo reset — use all history again</button>`:''}</div>`);
+  const sh=openSheet(c);
+  sh.querySelector('#rsgo').onclick=()=>{
+    const v=parseFloat(String(sh.querySelector('#rsstart').value).replace(',','.'));
+    DB.sugReset=DB.sugReset||{};
+    DB.sugReset[sugKey(name)]={date:todayKey(), ids:DB.sessions.map(s=>s.id), start:v>0?v:null, why:sh.querySelector('#rswhy').value.trim()};
+    save(); closeSheet(); render(); toast(v>0?`Suggestions now start from ${fmt(v,1)} kg`:'Suggestion reset');
+  };
+  const u=sh.querySelector('#rsundo'); if(u) u.onclick=()=>{ delete DB.sugReset[sugKey(name)]; save(); closeSheet(); render(); toast('Using all history again'); };
 }
 function suggestWeight(name, reps, rpe){
   const e1=bestE1RM(name); if(!e1) return null;
@@ -870,7 +898,7 @@ function repCue(name, pl){
   if(!pl || pl.repsLo===pl.repsHi) return null;
   const hist=[];
   DB.sessions.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(s=>{
-    if(hist.length>=2) return;
+    if(hist.length>=2 || !countsForSug(s,name)) return;
     const e=(s.exercises||[]).find(x=>x.name.toLowerCase()===String(name).toLowerCase());
     if(e && (e.sets||[]).some(setValid)) hist.push(e);
   });
@@ -1131,7 +1159,7 @@ function sessionScreen(d){
       </div>
       ${ex.plan
         ? `<div class="target">Target: ${esc(planLabel(ex.plan))}${ex.plan.deload?' · deload':''}${
-             sugW?` <span class="sugw">try ${sugW} kg</span>`:''}</div>`
+             sugW?` <span class="sugw">try ${sugW} kg</span>`:''}${sugReset(ex.name)?' <span class="pill" title="Suggestion reset">reset</span>':''}</div>`
         : (ex.target?`<div class="target">Target: ${esc(ex.target)}</div>`:'')}
       ${cue?`<div class="cue ${cue.dir}">${esc(cue.text)}</div>`:''}
       ${prev?`<div class="lastnote">Last time: ${esc(prev)}</div>`:''}
@@ -2643,9 +2671,10 @@ function progEditor(e, key, wk){
       <tbody>${rows.join('')}</tbody>
     </table>
     <p class="tiny muted" style="margin:8px 2px 10px">
-      ${e1 ? `Weights are priced off your best estimated max of ${fmt(e1,1)} kg, aimed at the middle of the band.`
-           : 'Log a few sets and suggested weights will appear here.'}
+      ${e1 ? `Weights are priced off your ${sugReset(e.name)?'estimated max since the reset':'best estimated max'} of ${fmt(e1,1)} kg, aimed at the middle of the band.`
+           : sugReset(e.name)?'Suggestion reset — weights appear again once you log new sets.':'Log a few sets and suggested weights will appear here.'}
       Edit any cell to pin it; ↺ puts it back on the rule.</p>
+    <button class="btn sm" data-act="resetsug" data-name="${esc(e.name)}" style="margin-bottom:10px">${sugReset(e.name)?'Suggestion reset — change…':'Reset weight suggestion (injury, break)…'}</button>
   </div>`;
 }
 
@@ -3367,6 +3396,7 @@ function bind(){
     if(a==='theme'){ DB.settings.theme = isLight() ? 'dark' : 'light'; save(); applyTheme(); render(); return; }
     if(a==='menu') return menuSheet();
     if(a==='switchwo') return switchWorkoutSheet();
+    if(a==='resetsug') return resetSugSheet(t.dataset.name);
 
     /* block */
     if(a==='newblock') return newBlockSheet();
@@ -4311,8 +4341,10 @@ function exMenuSheet(i){
     <div class="field"><label>Name</label><input type="text" id="exrename" value="${esc(ex.name)}"></div>
     <div class="field"><label>Note</label><input type="text" id="exrenote" value="${esc(ex.note||'')}" placeholder="e.g. 6-10 reps"></div>
     <button class="btn primary full" data-act="renameex" data-ex="${i}">Save changes</button>
+    <button class="btn full" id="exsug" style="margin-top:10px">Weight suggestion${sugReset(ex.name)?' (reset)':''}…</button>
     <button class="btn danger full" data-act="removeex" data-ex="${i}" style="margin-top:10px">Remove from session</button></div>`);
-  openSheet(c);
+  const sh=openSheet(c);
+  sh.querySelector('#exsug').onclick=()=>resetSugSheet(ex.name);
 }
 
 
