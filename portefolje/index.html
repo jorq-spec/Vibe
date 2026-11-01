@@ -85,7 +85,7 @@ h2.sec{font-size:13.5px;font-weight:700;color:var(--muted);margin:22px 2px 8px;l
 .item .r{text-align:right;flex:none}
 .item .r b{display:block;font-size:15.5px;font-weight:650}
 .item .r span{display:block;font-size:13px}
-.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--soft);color:var(--muted);vertical-align:1px}
+.item .b span.tag,.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--soft);color:var(--muted);vertical-align:1px}
 .tag.ask{background:var(--acc-soft);color:var(--acc)}
 .tag.new{background:#F6E7C4;color:#7A5504}
 html.dark .tag.new{background:#3A2E12;color:#F2BE55}
@@ -216,25 +216,30 @@ const ICON={
    from proceeds) — the same method Skatteetaten uses for shares.
    ============================================================ */
 const ORDER={split:0,buy:1,div:2,sell:3};
+/* A foreign-currency line without its own rate borrows today's, and is flagged. */
+function txCur(t){ return t.cur||sec(t.secId)?.cur||'NOK'; }
+function txFx(t){ const c=txCur(t); if(c==='NOK') return 1; const f=num(t.fx); return f>0?f:fxNow(c); }
+const fxMissing=t=>txCur(t)!=='NOK'&&!(num(t.fx)>0)&&t.type!=='split';
 function sortedTx(){ return DB.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)||(ORDER[a.type]-ORDER[b.type])||(a.created||0)-(b.created||0)); }
 function compute(){
   const lots={}, realized=[], divs=[], errors=[];
   const K=(a,s)=>a+'|'+s;
   for(const t of sortedTx()){
     const k=K(t.accId,t.secId); const L=lots[k]=lots[k]||[];
+    if(fxMissing(t)) errors.push({tx:t, msg:`mangler valutakurs for ${txCur(t)} – trykk her og hent den`});
     if(t.type==='buy'){
-      const q=num(t.qty), cost=q*num(t.price)*(num(t.fx)||1)+(num(t.fee)||0);
+      const q=num(t.qty), cost=q*num(t.price)*(txFx(t)||1)+(num(t.fee)||0);
       L.push({q, cpu:cost/q, date:t.date, txId:t.id});
     } else if(t.type==='split'){
       const r=num(t.ratio)||1; L.forEach(l=>{ l.q*=r; l.cpu/=r; });
     } else if(t.type==='sell'){
-      let q=num(t.qty); const proceeds=q*num(t.price)*(num(t.fx)||1)-(num(t.fee)||0);
+      let q=num(t.qty); const proceeds=q*num(t.price)*(txFx(t)||1)-(num(t.fee)||0);
       let cost=0; const sold=q;
       while(q>1e-9&&L.length){ const l=L[0], take=Math.min(l.q,q); cost+=take*l.cpu; l.q-=take; q-=take; if(l.q<=1e-9) L.shift(); }
       if(q>1e-9) errors.push({tx:t, msg:`Salget er ${qf(q)} aksjer større enn beholdningen`});
       realized.push({tx:t, date:t.date, secId:t.secId, accId:t.accId, qty:sold, proceeds, cost, gain:proceeds-cost});
     } else if(t.type==='div'){
-      const gross=num(t.qty)*num(t.perShare)*(num(t.fx)||1), tax=num(t.tax)||0;
+      const gross=num(t.qty)*num(t.perShare)*(txFx(t)||1), tax=num(t.tax)||0;
       divs.push({tx:t, date:t.date, secId:t.secId, accId:t.accId, gross, tax, net:gross-tax});
     }
   }
@@ -260,7 +265,8 @@ function qtyHeld(secId, accId, beforeDate){
   }
   return Math.max(0, Math.round(q*1e6)/1e6);
 }
-function fxNow(cur){ if(!cur||cur==='NOK') return 1; const f=DB.fx[cur]; return f&&f.rate>0?f.rate:NaN; }
+function fxNow(cur){ if(!cur||cur==='NOK') return 1; const f=DB.fx[cur]; if(f&&f.rate>0) return f.rate;
+  const H=(DB.fxHist||{})[cur]||{}; const d=Object.keys(H).sort().pop(); return d?H[d]:NaN; }
 
 /* ============================================================
    Data sources — filled in below (prices, dividends, exchange rates)
@@ -430,13 +436,56 @@ function autoRefresh(){
   refreshAll(false);
 }
 
-const PROVIDER_GAP_MS=0;
-const PROVIDER_INFO='Automatisk henting av kurser og utbytte kommer i neste oppdatering. Til da kan du skrive inn dagens kurs på hver aksje under Beholdning.';
-const PROVIDER_KEY_LABEL='API-nøkkel (kommer)';
-function dataReady(){ return false; }
-async function getQuote(s){ return null; }
-async function getDividends(s){ return null; }
-async function testProvider(){ return 'Lagret – brukes når automatisk henting er på plass.'; }
+/* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
+   Prices are the latest end-of-day close. Dividends come with ex-date, pay date
+   and currency, so 2020 Bulkers' USD dividends land in USD. The free plan is
+   rationed, so prices refresh once a day and dividend history once a week. */
+const PROVIDER_GAP_MS=250;
+const PROVIDER_INFO='Kurser (sluttkurs forrige handelsdag) og utbytte hentes fra EODHD. Gratis nøkkel: registrer deg på eodhd.com og kopier «API token» fra kontosiden. Gratisnivået gir 20 oppslag i døgnet – appen sparer på dem: kurser én gang om dagen, utbyttehistorikk én gang i uka.';
+const PROVIDER_KEY_LABEL='EODHD API token';
+const DAILY_CAP=20;
+function dataReady(){ return !!DB.settings.apiKey; }
+/* EQNR + NOK → EQNR.OL, MSFT + USD → MSFT.US. A ticker with a dot is used as written. */
+function eodSymbol(s){
+  const t=String(s.ticker||'').trim().toUpperCase(); if(!t) return '';
+  if(t.includes('.')) return t;
+  const ex={NOK:'OL',USD:'US',SEK:'ST',DKK:'CO',EUR:'',GBP:'LSE'}[s.cur];
+  return ex?`${t}.${ex}`:t;
+}
+function budget(){ const k=today(); DB.calls=DB.calls&&DB.calls.day===k?DB.calls:{day:k,n:0}; return DAILY_CAP-DB.calls.n; }
+async function eod(path, params){
+  if(budget()<=0) throw new Error('dagens 20 oppslag er brukt opp – prøver igjen i morgen');
+  const u=`https://eodhd.com/api/${path}?api_token=${encodeURIComponent(DB.settings.apiKey)}&fmt=json${params||''}`;
+  let r; try{ r=await fetch(u); }catch(e){ throw new Error('fikk ikke kontakt med EODHD'); }
+  DB.calls.n++; save();
+  if(r.status===401||r.status===403) throw new Error('nøkkelen ble avvist, eller dette dekkes ikke av gratisplanen');
+  if(r.status===402||r.status===429) throw new Error('dagens kvote hos EODHD er brukt opp');
+  if(r.status===404) throw new Error('fant ikke tickeren');
+  if(!r.ok) throw new Error('EODHD svarte '+r.status);
+  const txt=await r.text(); try{ return JSON.parse(txt); }catch(e){ throw new Error(txt.slice(0,80)||'uleselig svar'); }
+}
+async function getQuote(s){
+  const sym=eodSymbol(s); if(!sym) return null;
+  if(s.priceSrc==='EODHD'&&s.priceAt&&s.priceFetched===today()) return {price:s.price,date:s.priceAt.slice(0,10),src:'EODHD'};
+  const rows=await eod(`eod/${encodeURIComponent(sym)}`,`&from=${addDays(today(),-12)}`);
+  if(!Array.isArray(rows)||!rows.length) return null;
+  const last=rows[rows.length-1]; s.priceFetched=today();
+  return {price:Number(last.close), date:last.date, src:'EODHD'};
+}
+async function getDividends(s){
+  const sym=eodSymbol(s); if(!sym) return null;
+  const c=DB.divCache[s.id]; if(c&&c.at&&(Date.now()-new Date(c.at))<6*864e5) return c.items;
+  const first=DB.tx.filter(t=>t.secId===s.id).map(t=>t.date).sort()[0]||addDays(today(),-365);
+  const rows=await eod(`div/${encodeURIComponent(sym)}`,`&from=${addDays(first,-5)}`);
+  if(!Array.isArray(rows)) return null;
+  return rows.map(d=>({exDate:d.date, payDate:d.paymentDate||'', amount:Number(d.unadjustedValue??d.value), cur:(d.currency||'').toUpperCase()}))
+    .filter(d=>d.exDate&&d.amount>0);
+}
+async function testProvider(){
+  const rows=await eod('eod/EQNR.OL',`&from=${addDays(today(),-12)}`);
+  if(Array.isArray(rows)&&rows.length) return `Virker – Equinor ${nf(rows[rows.length-1].close,2)} kr (${prettyDate(rows[rows.length-1].date)}). ${budget()} oppslag igjen i dag.`;
+  return 'Svar uten kurs – sjekk nøkkelen.';
+}
 /* ---------- Settings sheet for keys ---------- */
 function sourcesSheet(){
   const st=DB.settings;
@@ -444,7 +493,8 @@ function sourcesSheet(){
     <div class="card"><b>Kurser og utbytte</b>
       <p class="tiny muted" style="margin:4px 0 10px">${PROVIDER_INFO}</p>
       <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL}</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
-      <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div></div>
+      <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
+      ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0">${budget()} av ${DAILY_CAP} oppslag igjen i dag.</p>`:''}</div>
     <div class="card"><b>Valutakurser</b><p class="tiny muted" style="margin:4px 0 0">Hentes fra Norges Bank uten nøkkel, med Den europeiske sentralbanken som reserve. Kursen for handelsdagen brukes, eller siste virkedag før.</p>
       ${Object.keys(DB.fx).length?`<p class="tiny" style="margin:8px 0 0">${Object.entries(DB.fx).map(([c,f])=>`${c} ${nf(f.rate,4)} (${prettyDate(f.date)})`).join(' · ')}</p>`:''}</div>
     <div class="card"><b>AI-analyse</b><p class="tiny muted" style="margin:4px 0 10px">Gemini-nøkkel fra aistudio.google.com – den samme som i tarot-appen fungerer. Gratis, med en daglig kvote.</p>
@@ -514,7 +564,7 @@ function viewHome(C){
   const hasAsk=DB.accounts.some(a=>a.type==='ask');
   const ys=Object.keys(yrs).sort().reverse();
   const sugg=pendingDivs(C).length;
-  return `${C.errors.length?`<div class="card" style="border-color:var(--down)"><b class="down">Noe stemmer ikke</b>${C.errors.map(e=>`<p class="tiny" style="margin:4px 0 0">${esc(prettyDate(e.tx.date))}: ${esc(e.msg)} (${esc(sec(e.tx.secId)?.name||'')})</p>`).join('')}</div>`:''}
+  return `${C.errors.length?`<div class="card" style="border-color:var(--down)"><b class="down">Noe må sjekkes</b>${C.errors.map(e=>`<button class="tiny" style="display:block;text-align:left;margin:6px 0 0" data-act="opentx" data-id="${e.tx.id}">${esc(prettyDate(e.tx.date))} · ${esc(sec(e.tx.secId)?.name||'')}: ${esc(e.msg)} ›</button>`).join('')}</div>`:''}
     ${sugg?`<button class="item" data-tab="div" style="border-color:var(--warn)"><div class="b"><b>${sugg} ${sugg===1?'nytt utbytte':'nye utbytter'} funnet</b><span>Trykk for å se og legge dem til</span></div><span class="tag new">Nytt</span></button>`:''}
     <div class="card hero">
       <div class="lbl">Markedsverdi nå</div>
@@ -562,9 +612,9 @@ function txLine(t){
   if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))} × ${nf(num(t.price),2)} ${cur}`;
   else if(t.type==='div') what=`${qf(num(t.qty))} × ${nf(num(t.perShare),4).replace(/,?0+$/,'')} ${cur}`;
   else what=`forhold ${t.ratio}`;
-  const amt=t.type==='buy'?-(num(t.qty)*num(t.price)*(num(t.fx)||1)+(num(t.fee)||0))
-    :t.type==='sell'?num(t.qty)*num(t.price)*(num(t.fx)||1)-(num(t.fee)||0)
-    :t.type==='div'?num(t.qty)*num(t.perShare)*(num(t.fx)||1)-(num(t.tax)||0):null;
+  const amt=t.type==='buy'?-(num(t.qty)*num(t.price)*(txFx(t)||1)+(num(t.fee)||0))
+    :t.type==='sell'?num(t.qty)*num(t.price)*(txFx(t)||1)-(num(t.fee)||0)
+    :t.type==='div'?num(t.qty)*num(t.perShare)*(txFx(t)||1)-(num(t.tax)||0):null;
   return `<button class="item" data-act="opentx" data-id="${t.id}">
     <div class="b"><b>${esc(TYPES[t.type])} · ${esc(s?.name||'?')}</b><span>${esc(prettyDate(t.date))} · ${esc(what)}${DB.accounts.length>1&&a?` · ${esc(a.name)}`:''}</span></div>
     <div class="r">${amt!=null?`<b class="num ${t.type==='buy'?'':'up'}">${sgn(amt)}</b><span class="tiny muted">kr</span>`:''}</div></button>`;
@@ -587,7 +637,7 @@ function viewDiv(C){
   const totDiv=top.reduce((s,x)=>s+x[1],0);
   return `${pend.length?`<h2 class="sec" style="margin-top:4px">Funnet automatisk (${pend.length})</h2>
       ${pend.map((p,i)=>`<div class="item" style="cursor:default"><div class="b"><b>${esc(sec(p.secId)?.name)} <span class="tag new">Ny</span></b>
-        <span>Eks-dato ${esc(prettyDate(p.exDate))} · ${qf(p.qty)} stk × ${nf(p.amount,4).replace(/,?0+$/,'')} ${p.cur}${DB.accounts.length>1?' · '+esc(acc(p.accId)?.name||''):''}</span></div>
+        <span style="white-space:normal">Eks-dato ${esc(prettyDate(p.exDate))} · ${qf(p.qty)} stk × ${nf(p.amount,4).replace(/,?0+$/,'')} ${p.cur}${DB.accounts.length>1?' · '+esc(acc(p.accId)?.name||''):''}</span></div>
         <div class="r"><button class="btn sm" data-act="adddiv" data-i="${i}">Legg til</button></div></div>`).join('')}
       <div class="row"><button class="btn solid full" data-act="addalldiv">Legg til alle</button><button class="btn full" data-act="dismissall">Ignorer</button></div>
       <p class="note">Antall aksjer er beholdningen dagen før eks-dato. Valutakursen hentes fra Norges Bank for utbetalingsdagen. Sjekk mot sluttseddel/kontoutskrift om kildeskatt er trukket.</p>`:''}
@@ -725,7 +775,7 @@ function secSheet(id, onSaved){
       <div class="f"><label for="sdc">Utbytte i</label><select id="sdc"><option value="">Samme</option>${CURS.map(c=>`<option ${c===s.divCur?'selected':''}>${c}</option>`).join('')}</select></div></div>
     <div class="two"><div class="f"><label for="ssec">Sektor</label><input id="ssec" value="${esc(s.sector||'')}" placeholder="f.eks. Shipping" list="sectors"><datalist id="sectors">${[...new Set(DB.secs.map(x=>x.sector).filter(Boolean).concat(['Energi','Shipping','Finans','Sjømat','Teknologi','Industri','Eiendom','Helse','Forbruk','Råvarer','Fond']))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
       <div class="f"><label for="spx">Kurs nå (${esc(s.cur)})</label><input id="spx" inputmode="decimal" value="${esc(s.price)}" placeholder="hentes automatisk"></div></div>
-    <p class="hint" style="margin:-6px 2px 12px">Eksempel: 2020 Bulkers handles i NOK på Oslo Børs, men betaler utbytte i USD.</p>
+    <p class="hint" style="margin:-6px 2px 12px">Ticker som på Oslo Børs, f.eks. EQNR eller 2020. For utenlandske aksjer velger du valuta, så finner appen børsen (USD → USA), eller skriv f.eks. NOVO-B.CO. Eksempel: 2020 Bulkers handles i NOK, men betaler utbytte i USD.</p>
     <button class="btn solid full" id="ssave">${id?'Lagre':'Legg til aksje'}</button>
     ${id?`<button class="btn full" id="sfetch" style="margin-top:10px">Hent kurs og utbytte nå</button><p class="hint" id="sfh" style="margin:6px 2px 0"></p>`:''}
     ${p&&p.lots.length?`<h2 class="sec">Kjøpsposter som fortsatt eies (FIFO)</h2><div class="card"><table class="t"><thead><tr><th>Kjøpt</th><th>Antall</th><th>Kost/stk</th></tr></thead><tbody>
