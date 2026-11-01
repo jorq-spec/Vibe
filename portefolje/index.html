@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F3F5F2">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Portefølje">
+<link rel="icon" href="data:image/png;base64,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">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<link rel="manifest" href='data:application/manifest+json,{"name":"Portefølje","short_name":"Portefølje","display":"standalone","background_color":"%23F3F5F2","theme_color":"%23F3F5F2","start_url":"./","icons":[{"src":"data:image/png;base64,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","sizes":"180x180","type":"image/png"}]}'>
+<title>Portefølje</title>
+<style>
+/* Money app: calm paper, one green for gains, one rust for losses. Numbers are
+   tabular so columns of kroner line up. */
+:root{
+  --bg:#F3F5F2; --card:#FFFFFF; --card2:#EBEFEA; --ink:#14201C; --muted:#56635D; --faint:#86918B;
+  --line:#D6DDD7; --soft:#E6EBE6; --acc:#14705A; --acc-soft:#D3EBE2; --on-acc:#FFFFFF;
+  --up:#16774F; --down:#B4472F; --warn:#9A6B05;
+  --c1:#14705A; --c2:#3F7FBF; --c3:#C98A12; --c4:#8B5CB8; --c5:#C0563E; --c6:#4E9A6B; --c7:#5E6C7A; --c8:#B8628C;
+  color-scheme:light;
+}
+html.dark{
+  --bg:#0F1614; --card:#18211E; --card2:#1F2A26; --ink:#E7EEEA; --muted:#9AA8A1; --faint:#6E7C75;
+  --line:#2A3631; --soft:#222D29; --acc:#57C9A0; --acc-soft:#173A30; --on-acc:#082019;
+  --up:#5BD49A; --down:#EE8466; --warn:#F2BE55;
+  --c1:#57C9A0; --c2:#78AEE6; --c3:#F2BE55; --c4:#B794E6; --c5:#EE8466; --c6:#8CD3A4; --c7:#9AA8B5; --c8:#E59BC0;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;padding-bottom:calc(96px + max(env(safe-area-inset-bottom),4px))}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.up{color:var(--up)} .down{color:var(--down)}
+.muted{color:var(--muted)} .tiny{font-size:13px}
+
+.top{position:sticky;top:0;z-index:30;background:var(--bg);border-bottom:1px solid var(--line);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
+.top h1{flex:1;margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em;line-height:1.15}
+.top h1 small{display:block;font-size:12.5px;font-weight:500;color:var(--muted);letter-spacing:0}
+.ib{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;border:1px solid var(--line);background:var(--card);color:var(--muted)}
+.ib svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+main{max-width:640px;margin:0 auto;padding:14px 16px}
+
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(4,1fr);background:var(--bg);
+  border-top:1px solid var(--line);padding:6px 6px calc(8px + max(env(safe-area-inset-bottom),4px));transform:translateZ(0)}
+.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 2px;font-size:12px;font-weight:600;color:var(--faint);position:relative}
+.tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.tabs button[aria-selected="true"]{color:var(--acc)}
+.fab{position:fixed;right:16px;bottom:calc(84px + max(env(safe-area-inset-bottom),4px));z-index:35;display:flex;align-items:center;gap:7px;
+  padding:13px 18px;border-radius:999px;background:var(--acc);color:var(--on-acc);font-weight:700;font-size:15px;box-shadow:0 8px 22px rgba(0,0,0,.22)}
+.fab svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+.fab[hidden]{display:none}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px}
+.hero{padding:18px 16px}
+.hero .lbl{font-size:13px;color:var(--muted);font-weight:600}
+.hero .big{font-size:34px;font-weight:750;letter-spacing:-.03em;margin:2px 0 4px}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.kv div{background:var(--card2);border-radius:11px;padding:10px 12px}
+.kv span{display:block;font-size:12px;color:var(--muted);font-weight:600}
+.kv b{display:block;font-size:17px;font-weight:700;margin-top:2px}
+h2.sec{font-size:13.5px;font-weight:700;color:var(--muted);margin:22px 2px 8px;letter-spacing:.01em}
+.row{display:flex;gap:8px;align-items:center}
+.spread{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:12px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:15px}
+.btn.solid{background:var(--acc);border-color:var(--acc);color:var(--on-acc)}
+.btn.full{width:100%}
+.btn.sm{padding:8px 12px;font-size:14px;border-radius:10px}
+.btn.danger{color:var(--down)}
+.btn.ghost{border-style:dashed;background:none}
+.btn[disabled]{opacity:.5}
+
+.item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:8px}
+.item .b{flex:1;min-width:0}
+.item .b b{display:block;font-size:15.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .b span{display:block;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .r{text-align:right;flex:none}
+.item .r b{display:block;font-size:15.5px;font-weight:650}
+.item .r span{display:block;font-size:13px}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--soft);color:var(--muted);vertical-align:1px}
+.tag.ask{background:var(--acc-soft);color:var(--acc)}
+.tag.new{background:#F6E7C4;color:#7A5504}
+html.dark .tag.new{background:#3A2E12;color:#F2BE55}
+
+.alloc{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--soft);margin:8px 0 10px}
+.alloc i{display:block;height:100%}
+.legend{display:grid;gap:6px}
+.legend div{display:flex;align-items:center;gap:8px;font-size:14px}
+.legend i{width:10px;height:10px;border-radius:3px;flex:none}
+.legend span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13.5px;font-weight:600;color:var(--muted)}
+.chip[aria-pressed="true"]{background:var(--acc-soft);border-color:var(--acc);color:var(--acc)}
+table.t{width:100%;border-collapse:collapse;font-size:14px}
+table.t th{text-align:right;font-size:12px;color:var(--muted);font-weight:650;padding:4px 6px;border-bottom:1px solid var(--line)}
+table.t th:first-child,table.t td:first-child{text-align:left}
+table.t td{text-align:right;padding:7px 6px;border-bottom:1px solid var(--soft);font-variant-numeric:tabular-nums}
+table.t tr:last-child td{border-bottom:0}
+.bars{display:flex;align-items:flex-end;gap:6px;height:130px;margin:10px 0 4px}
+.bars div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.bars i{display:block;width:100%;max-width:38px;border-radius:5px 5px 2px 2px;background:var(--acc)}
+.bars span{font-size:11.5px;color:var(--muted);margin-top:4px}
+.bars em{font-style:normal;font-size:10.5px;color:var(--faint);margin-bottom:3px;white-space:nowrap}
+.empty{text-align:center;color:var(--muted);padding:30px 14px}
+.empty h3{color:var(--ink);margin:0 0 6px}
+.ai p{margin:0 0 10px}
+.note{font-size:12.5px;color:var(--faint);margin:8px 2px 0}
+
+.scrim{position:fixed;inset:0;background:rgba(8,14,12,.45);z-index:60}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:61;max-height:92vh;max-height:92dvh;overflow:auto;background:var(--bg);
+  border-radius:20px 20px 0 0;padding:10px 16px calc(26px + max(env(safe-area-inset-bottom),12px));box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+.sheet .grab{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 12px}
+.sheet h3{margin:0 0 2px;font-size:22px;letter-spacing:-.02em}
+.sheet .sub{margin:0 0 14px;color:var(--muted);font-size:14px}
+@media (min-width:700px){.sheet{left:50%;right:auto;width:640px;transform:translateX(-50%)}}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:13px;font-weight:650;color:var(--muted);margin-bottom:5px}
+.f input,.f select,.f textarea{width:100%;padding:11px 12px;border-radius:11px;border:1px solid var(--line);background:var(--card);font-size:16px}
+.f textarea{min-height:80px;resize:vertical}
+.f .hint{font-size:12.5px;color:var(--faint);margin-top:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;background:var(--card)}
+.seg button{padding:10px 4px;font-size:14px;font-weight:650;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--acc);color:var(--on-acc)}
+input.bad,select.bad{border-color:var(--down)!important}
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top));z-index:80;background:var(--ink);color:var(--bg);
+  padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;max-width:calc(100vw - 40px);text-align:center}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top" id="top"></header>
+<main id="app"></main>
+<button class="fab" id="fab" hidden><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span id="fabLbl">Ny transaksjon</span></button>
+<nav class="tabs" id="tabs"></nav>
+<script>
+/* ============================================================
+   Data
+   ============================================================ */
+const KEY='portefolje_v1';
+const TYPES={buy:'Kjøp',sell:'Salg',div:'Utbytte',split:'Splitt'};
+const CURS=['NOK','USD','EUR','SEK','DKK','GBP'];
+const uid=()=>Date.now().toString(36).slice(-4)+Math.random().toString(36).slice(2,7);
+let DB;
+try{ DB=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ DB=null; }
+function blank(){ return {v:1,accounts:[{id:uid(),name:'Aksjekonto',type:'ord'}],secs:[],tx:[],fx:{},divCache:{},dismissed:{},
+  settings:{theme:'light',provider:'',apiKey:'',gemKey:'',model:''}}; }
+if(!DB||!Array.isArray(DB.tx)) DB=blank();
+function normalize(){ const b=blank();
+  for(const k of Object.keys(b)) if(DB[k]==null) DB[k]=b[k];
+  DB.settings=Object.assign(b.settings,DB.settings||{});
+  if(!DB.accounts.length) DB.accounts=b.accounts; }
+normalize();
+let saveT; function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{ try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){ toast('Fikk ikke lagret: lagringen er full'); } },150); }
+addEventListener('pagehide',()=>{ try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){} });
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const el=h=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstElementChild;};
+function toast(m){ const o=$('.toast'); if(o) o.remove(); const t=el(`<div class="toast">${esc(m)}</div>`); document.body.appendChild(t); setTimeout(()=>t.remove(),2600); }
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const today=()=>ymd(new Date());
+const parseYmd=s=>{ const [a,b,c]=String(s).split('-').map(Number); return new Date(a,b-1,c); };
+const addDays=(k,n)=>{ const d=parseYmd(k); d.setDate(d.getDate()+n); return ymd(d); };
+const isoToDMY=v=>{ const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m?`${m[3]}.${m[2]}.${m[1]}`:''; };
+function dmyToIso(str){
+  const s=String(str||'').trim(); if(!s) return null;
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  m=s.match(/^(\d{1,2})[./ -](\d{1,2})[./ -](\d{2,4})$/)||s.match(/^(\d{2})(\d{2})(\d{4})$/); if(!m) return null;
+  let d=+m[1],mo=+m[2],y=+m[3]; if(y<100) y+=2000;
+  const dt=new Date(Date.UTC(y,mo-1,d)); if(dt.getUTCDate()!==d||dt.getUTCMonth()!==mo-1) return null;
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+const num=v=>{ if(v==null||v==='') return NaN; return Number(String(v).replace(/\s/g,'').replace(',','.')); };
+const nf=(n,d=0)=>(n==null||isNaN(n))?'–':Number(n).toLocaleString('nb-NO',{minimumFractionDigits:d,maximumFractionDigits:d});
+const kr=(n,d=0)=>(n==null||isNaN(n))?'–':`${nf(n,d)} kr`;
+const sgn=(n,d=0)=>(n==null||isNaN(n))?'–':`${n>0?'+':n<0?'−':''}${nf(Math.abs(n),d)}`;
+const pct=(n,d=1)=>(n==null||!isFinite(n))?'–':`${n>0?'+':n<0?'−':''}${nf(Math.abs(n),d)} %`;
+const cls=n=>n>0.005?'up':n<-0.005?'down':'';
+const qf=n=>nf(n, Math.abs(n%1)>1e-9?4:0).replace(/,?0+$/,m=>m.startsWith(',')?'':m);
+const MON=['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
+const prettyDate=k=>{ if(!k) return ''; const d=parseYmd(k); return `${d.getDate()}. ${MON[d.getMonth()]} ${d.getFullYear()}`; };
+const sec=id=>DB.secs.find(s=>s.id===id);
+const acc=id=>DB.accounts.find(a=>a.id===id);
+const ICON={
+  home:'<svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
+  pie:'<svg viewBox="0 0 24 24"><path d="M12 3v9h9"/><circle cx="12" cy="12" r="9"/></svg>',
+  list:'<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg>',
+  coin:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.6-.8-1.6-1.2-2.8-1.2-1.7 0-2.8.8-2.8 2s1.1 1.7 2.8 2 2.8.8 2.8 2-1.1 2-2.8 2c-1.2 0-2.2-.4-2.8-1.2M12 6v2M12 16v2"/></svg>',
+  menu:'<svg viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="18.5" r="1"/></svg>',
+  sun:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></svg>',
+  moon:'<svg viewBox="0 0 24 24"><path d="M20.5 13.2A8.3 8.3 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>',
+  refresh:'<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
+  back:'<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+};
+
+/* ============================================================
+   The engine. Replays every transaction in date order, per account and
+   security, keeping FIFO lots in kroner (fees included in cost, deducted
+   from proceeds) — the same method Skatteetaten uses for shares.
+   ============================================================ */
+const ORDER={split:0,buy:1,div:2,sell:3};
+function sortedTx(){ return DB.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)||(ORDER[a.type]-ORDER[b.type])||(a.created||0)-(b.created||0)); }
+function compute(){
+  const lots={}, realized=[], divs=[], errors=[];
+  const K=(a,s)=>a+'|'+s;
+  for(const t of sortedTx()){
+    const k=K(t.accId,t.secId); const L=lots[k]=lots[k]||[];
+    if(t.type==='buy'){
+      const q=num(t.qty), cost=q*num(t.price)*(num(t.fx)||1)+(num(t.fee)||0);
+      L.push({q, cpu:cost/q, date:t.date, txId:t.id});
+    } else if(t.type==='split'){
+      const r=num(t.ratio)||1; L.forEach(l=>{ l.q*=r; l.cpu/=r; });
+    } else if(t.type==='sell'){
+      let q=num(t.qty); const proceeds=q*num(t.price)*(num(t.fx)||1)-(num(t.fee)||0);
+      let cost=0; const sold=q;
+      while(q>1e-9&&L.length){ const l=L[0], take=Math.min(l.q,q); cost+=take*l.cpu; l.q-=take; q-=take; if(l.q<=1e-9) L.shift(); }
+      if(q>1e-9) errors.push({tx:t, msg:`Salget er ${qf(q)} aksjer større enn beholdningen`});
+      realized.push({tx:t, date:t.date, secId:t.secId, accId:t.accId, qty:sold, proceeds, cost, gain:proceeds-cost});
+    } else if(t.type==='div'){
+      const gross=num(t.qty)*num(t.perShare)*(num(t.fx)||1), tax=num(t.tax)||0;
+      divs.push({tx:t, date:t.date, secId:t.secId, accId:t.accId, gross, tax, net:gross-tax});
+    }
+  }
+  const pos={};
+  for(const [k,L] of Object.entries(lots)){
+    const [accId,secId]=k.split('|'); const q=L.reduce((s,l)=>s+l.q,0); if(q<1e-9) continue;
+    const cost=L.reduce((s,l)=>s+l.q*l.cpu,0);
+    const p=pos[secId]=pos[secId]||{secId,qty:0,cost:0,byAcc:{},lots:[]};
+    p.qty+=q; p.cost+=cost; p.byAcc[accId]=(p.byAcc[accId]||0)+q; L.forEach(l=>p.lots.push({...l,accId}));
+  }
+  for(const p of Object.values(pos)){
+    const s=sec(p.secId), px=s&&num(s.price), fx=s?fxNow(s.cur):NaN;
+    p.value=(px>0&&fx>0)?p.qty*px*fx:null; p.unreal=p.value!=null?p.value-p.cost:null; p.avg=p.cost/p.qty;
+  }
+  return {pos, realized, divs, errors};
+}
+/* Shares held at the close of the day before the ex-date = entitled to the dividend. */
+function qtyHeld(secId, accId, beforeDate){
+  let q=0;
+  for(const t of sortedTx()){
+    if(t.secId!==secId||(accId&&t.accId!==accId)||t.date>=beforeDate) continue;
+    if(t.type==='buy') q+=num(t.qty); else if(t.type==='sell') q-=num(t.qty); else if(t.type==='split') q*=num(t.ratio)||1;
+  }
+  return Math.max(0, Math.round(q*1e6)/1e6);
+}
+function fxNow(cur){ if(!cur||cur==='NOK') return 1; const f=DB.fx[cur]; return f&&f.rate>0?f.rate:NaN; }
+
+/* ============================================================
+   Data sources — filled in below (prices, dividends, exchange rates)
+   ============================================================ */
+/* ---------- Exchange rates: Norges Bank first, ECB (Frankfurter) as backup ---------- */
+async function fxNorgesBank(cur, start, end){
+  const u=`https://data.norges-bank.no/api/data/EXR/B.${cur}.NOK.SP?format=sdmx-json&startPeriod=${start}&endPeriod=${end}&locale=en`;
+  const r=await fetch(u); if(!r.ok) throw new Error('Norges Bank '+r.status);
+  const j=await r.json(); const root=j.data||j, st=root.structure;
+  const dates=st.dimensions.observation[0].values.map(v=>v.id);
+  const defs=(st.attributes&&st.attributes.series)||[];
+  const out={};
+  for(const s of Object.values(root.dataSets[0].series)){
+    const ai=defs.findIndex(a=>a.id==='UNIT_MULT');
+    const mult=ai>=0&&s.attributes&&s.attributes[ai]!=null?Number(defs[ai].values[s.attributes[ai]].id)||0:(['SEK','DKK','JPY','ISK'].includes(cur)?2:0);
+    for(const [oi,ob] of Object.entries(s.observations||{})) if(ob&&ob[0]!=null) out[dates[oi]]=Number(ob[0])/Math.pow(10,mult);
+  }
+  return out;
+}
+async function fxFrankfurter(cur, start, end){
+  for(const base of ['https://api.frankfurter.dev/v1','https://api.frankfurter.app']){
+    try{ const r=await fetch(`${base}/${start}..${end}?from=${cur}&to=NOK`); if(!r.ok) continue;
+      const j=await r.json(); const out={}; for(const [d,v] of Object.entries(j.rates||{})) if(v&&v.NOK) out[d]=v.NOK; return out; }catch(e){}
+  }
+  throw new Error('ingen svar');
+}
+/* Rate on a date = last published rate on or before it (weekends, holidays). */
+async function fxOn(cur, date){
+  if(cur==='NOK') return {rate:1,date};
+  DB.fxHist=DB.fxHist||{}; const H=DB.fxHist[cur]=DB.fxHist[cur]||{};
+  const pick=()=>{ const ds=Object.keys(H).filter(d=>d<=date&&d>=addDays(date,-10)).sort(); const d=ds[ds.length-1]; return d?{rate:H[d],date:d}:null; };
+  let hit=pick(); if(hit) return hit;
+  const start=addDays(date,-10), end=date>today()?today():date;
+  let got=null, err='';
+  try{ got=await fxNorgesBank(cur,start,end); }catch(e){ err=e.message; }
+  if(!got||!Object.keys(got).length){ try{ got=await fxFrankfurter(cur,start,end); }catch(e){ err+=(err?', ':'')+'ECB '+e.message; } }
+  if(got) Object.assign(H,got);
+  save(); hit=pick(); if(hit) return hit;
+  throw new Error(err||'fant ingen kurs');
+}
+async function refreshFx(){
+  const curs=[...new Set(DB.secs.map(s=>s.cur).filter(c=>c&&c!=='NOK'))];
+  for(const c of curs){ try{ const r=await fxOn(c,today()); DB.fx[c]={rate:r.rate,date:r.date,src:'auto'}; }catch(e){} }
+  save();
+}
+
+/* ---------- AI analysis (Gemini, the same key as the tarot app works) ---------- */
+const GEMINI_FALLBACKS=['gemini-3.6-flash','gemini-3.5-flash-lite','gemini-3.5-flash','gemini-2.5-flash-lite','gemini-flash-latest'];
+async function askGemini(prompt,opt={}){
+  const model=opt.model||DB.settings.model||GEMINI_FALLBACKS[0];
+  let r,j;
+  try{ r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {method:'POST',headers:{'content-type':'application/json','x-goog-api-key':DB.settings.gemKey},
+       body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{temperature:0.5,maxOutputTokens:1600}})});
+    j=await r.json(); }catch(e){ throw new Error('Fikk ikke kontakt med Google. Sjekk nettforbindelsen.'); }
+  if(!r.ok){ const msg=j?.error?.message||('HTTP '+r.status), raw=JSON.stringify(j?.error||{});
+    if(/quota|RESOURCE_EXHAUSTED/i.test(msg)||r.status===429){
+      if(/PerMinute|per minute/i.test(raw)) throw new Error('For mange forespørsler på kort tid. Vent et minutt og prøv igjen.');
+      const tried=opt.tried||[]; const next=GEMINI_FALLBACKS.find(m=>m!==model&&!tried.includes(m));
+      if(next&&tried.length<3) return askGemini(prompt,{model:next,tried:[...tried,model]});
+      throw new Error('Dagskvoten for gratismodellene er brukt opp. Den nullstilles i løpet av morgenen.'); }
+    if(/API key|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) throw new Error('Nøkkelen ble avvist. Sjekk den under Meny → Datakilder.');
+    if(/no longer available|not found|does not exist/i.test(msg)){ const tried=opt.tried||[]; const next=GEMINI_FALLBACKS.find(m=>m!==model&&!tried.includes(m));
+      if(next&&tried.length<3) return askGemini(prompt,{model:next,tried:[...tried,model]}); }
+    throw new Error(msg); }
+  if((opt.tried||[]).length){ DB.settings.model=model; save(); }
+  return (j.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join('\n');
+}
+function portfolioSummary(C){
+  const t=totals(C), P=Object.values(C.pos).sort((a,b)=>(b.value??b.cost)-(a.value??a.cost));
+  const tot=P.reduce((s,p)=>s+(p.value??p.cost),0)||1;
+  const lines=P.map(p=>{ const s=sec(p.secId);
+    return `- ${s.name}${s.ticker?' ('+s.ticker+')':''}: ${nf((p.value??p.cost)/tot*100,1)} % av porteføljen, sektor ${s.sector||'ukjent'}, handles i ${s.cur}${s.divCur&&s.divCur!==s.cur?', utbytte i '+s.divCur:''}, urealisert ${p.unreal!=null?pct(p.unreal/p.cost*100):'ukjent'}, utbytte siste 12 mnd ${nf(divLast12(C,p.secId))} kr, kontoer: ${Object.keys(p.byAcc).map(a=>acc(a)?.type==='ask'?'ASK':'ordinær').join('+')}`; });
+  const cur=group(C,p=>sec(p.secId)?.cur).map(x=>`${x.k} ${nf(x.v/tot*100,0)} %`).join(', ');
+  const sect=group(C,p=>sec(p.secId)?.sector).map(x=>`${x.k} ${nf(x.v/tot*100,0)} %`).join(', ');
+  const from=addDays(today(),-365), l12=C.divs.filter(d=>d.date>=from).reduce((s,d)=>s+d.net,0);
+  const nTrades=DB.tx.filter(x=>x.type==='buy'||x.type==='sell').length;
+  const fees=DB.tx.reduce((s,x)=>s+(num(x.fee)||0),0);
+  return `Dato: ${today()}
+Markedsverdi: ${nf(t.value)} kr. Investert i nåværende beholdning: ${nf(t.cost)} kr. Urealisert: ${sgn(t.unreal)} kr. Realisert totalt: ${sgn(t.real)} kr. Utbytte totalt: ${nf(t.div)} kr, siste 12 mnd ${nf(l12)} kr.
+Antall handler: ${nTrades}. Kurtasje totalt: ${nf(fees)} kr.
+Valuta (eksponering etter handelsvaluta): ${cur}
+Sektor: ${sect}
+Beholdning:
+${lines.join('\n')}`;
+}
+async function runAi(){
+  const box=$('#ai');
+  if(!DB.settings.gemKey){ toast('Legg inn en Gemini-nøkkel under Meny → Datakilder først'); return sourcesSheet(); }
+  if(!Object.keys(compute().pos).length) return toast('Legg inn noen kjøp først');
+  box.innerHTML='<p class="tiny muted"><span class="spin"></span> Analyserer porteføljen…</p>';
+  const prompt=`Du er en nøktern, erfaren investeringsrådgiver som gir en privatperson i Norge en kort gjennomgang av aksjeporteføljen hans. Skriv på norsk bokmål, i 4–6 korte avsnitt uten overskrifter med markdown-tegn (bruk gjerne **fet** for nøkkelord).
+Ta for deg: spredning og konsentrasjon (enkeltaksjer, sektor), valutaeksponering (merk at selskaper som handles i NOK kan ha inntekter og utbytte i USD), hvor avhengig utbyttet er av få selskaper, kostnader/kurtasje og handelsfrekvens, og ting å være oppmerksom på skattemessig (aksjesparekonto vs ordinær konto, fritaksmetoden gjelder ikke privatpersoner direkte, skjermingsfradrag). Avslutt med 2–3 konkrete ting han kan vurdere.
+Vær konkret og bruk tallene. Ikke anbefal å kjøpe eller selge bestemte aksjer, og ikke spå kursutvikling. Du kjenner ikke dagens nyheter, så ikke uttal deg om selskapenes siste hendelser.
+
+${portfolioSummary(compute())}`;
+  try{ const text=await askGemini(prompt); DB.lastAi={date:today(),text}; save(); box.innerHTML=aiHtml(DB.lastAi)+'<button class="btn sm" data-act="ai">Lag ny analyse</button>'; }
+  catch(e){ box.innerHTML=`<p class="tiny down">${esc(e.message)}</p><button class="btn sm" data-act="ai">Prøv igjen</button>`; }
+}
+
+/* ---------- Pending dividends: what the data source says was paid while you held shares ---------- */
+function pendingDivs(C){
+  const out=[];
+  for(const s of DB.secs){
+    const list=(DB.divCache[s.id]||{}).items||[];
+    for(const d of list){
+      if(!d.exDate||!(d.amount>0)) continue;
+      const pay=d.payDate||d.exDate; if(pay>today()) continue;          // not paid yet
+      for(const a of DB.accounts){
+        const q=qtyHeld(s.id,a.id,d.exDate); if(q<=0) continue;
+        if((DB.dismissed[s.id]||[]).includes(d.exDate+'|'+a.id)) continue;
+        const have=DB.tx.some(t=>t.type==='div'&&t.secId===s.id&&t.accId===a.id&&(t.exDate===d.exDate||Math.abs(parseYmd(t.date)-parseYmd(pay))<12*864e5));
+        if(have) continue;
+        out.push({secId:s.id, accId:a.id, exDate:d.exDate, payDate:pay, amount:d.amount, cur:d.cur||s.divCur||s.cur, qty:q});
+      }
+    }
+  }
+  return out.sort((a,b)=>b.payDate.localeCompare(a.payDate));
+}
+async function addPending(list){
+  if(!list.length) return;
+  toast('Henter valutakurser…');
+  let n=0, miss=0;
+  for(const p of list){
+    let fx='';
+    if(p.cur!=='NOK'){ try{ fx=String((await fxOn(p.cur,p.payDate)).rate); }catch(e){ miss++; } }
+    DB.tx.push({id:uid(),created:Date.now()+n,type:'div',date:p.payDate,exDate:p.exDate,secId:p.secId,accId:p.accId,qty:String(p.qty),
+      perShare:String(p.amount),cur:p.cur,fx,tax:'',auto:true,note:'Hentet automatisk'});
+    n++;
+  }
+  save(); render(); toast(miss?`${n} lagt til – ${miss} mangler valutakurs, trykk på dem og fyll inn`:`${n} ${n===1?'utbytte':'utbytter'} lagt til`);
+}
+
+/* ---------- Refresh: prices, dividends and today's exchange rates ---------- */
+let refreshing=false;
+async function refreshSec(s, verbose){
+  if(!s.ticker) return 'Mangler ticker – legg den inn for å hente automatisk.';
+  if(!dataReady()) return 'Legg inn en API-nøkkel under Meny → Datakilder for å hente automatisk.';
+  const msgs=[];
+  try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
+      if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur}`); } else msgs.push('fant ingen kurs'); }
+  catch(e){ msgs.push('kurs: '+e.message); }
+  try{ const d=await getDividends(s); if(d){ DB.divCache[s.id]={at:new Date().toISOString(),items:d}; msgs.push(`${d.length} utbytter i historikken`); } }
+  catch(e){ msgs.push('utbytte: '+e.message); }
+  save();
+  return msgs.join(' · ');
+}
+async function refreshAll(manual=true){
+  if(refreshing) return; refreshing=true;
+  const btn=document.querySelector('[data-act=refresh]'); if(btn) btn.innerHTML='<span class="spin"></span>';
+  try{
+    await refreshFx();
+    if(!dataReady()){ if(manual) toast('Valutakurser oppdatert. Legg inn API-nøkkel under Meny → Datakilder for kurser og utbytte.'); return; }
+    const held=compute().pos;
+    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)));
+    let ok=0, fail=[];
+    for(const s of list){ const r=await refreshSec(s); if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push(s.name); await sleep(PROVIDER_GAP_MS); }
+    DB.lastRefresh=new Date().toISOString(); save();
+    if(manual) toast(fail.length?`Oppdatert ${ok} – fikk ikke hentet ${fail.join(', ')}`:`Oppdatert ${ok} ${ok===1?'aksje':'aksjer'}`);
+  } finally { refreshing=false; render(); }
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+/* Once a day on its own, when the app opens. */
+function autoRefresh(){
+  const last=DB.lastRefresh||''; if(last.slice(0,10)===today()) return;
+  if(!DB.secs.length) return;
+  refreshAll(false);
+}
+
+const PROVIDER_GAP_MS=0;
+const PROVIDER_INFO='Automatisk henting av kurser og utbytte kommer i neste oppdatering. Til da kan du skrive inn dagens kurs på hver aksje under Beholdning.';
+const PROVIDER_KEY_LABEL='API-nøkkel (kommer)';
+function dataReady(){ return false; }
+async function getQuote(s){ return null; }
+async function getDividends(s){ return null; }
+async function testProvider(){ return 'Lagret – brukes når automatisk henting er på plass.'; }
+/* ---------- Settings sheet for keys ---------- */
+function sourcesSheet(){
+  const st=DB.settings;
+  const sh=openSheet(`<h3>Datakilder</h3><p class="sub">Nøklene lagres bare på denne enheten, og de blir med i backupen.</p>
+    <div class="card"><b>Kurser og utbytte</b>
+      <p class="tiny muted" style="margin:4px 0 10px">${PROVIDER_INFO}</p>
+      <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL}</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
+      <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div></div>
+    <div class="card"><b>Valutakurser</b><p class="tiny muted" style="margin:4px 0 0">Hentes fra Norges Bank uten nøkkel, med Den europeiske sentralbanken som reserve. Kursen for handelsdagen brukes, eller siste virkedag før.</p>
+      ${Object.keys(DB.fx).length?`<p class="tiny" style="margin:8px 0 0">${Object.entries(DB.fx).map(([c,f])=>`${c} ${nf(f.rate,4)} (${prettyDate(f.date)})`).join(' · ')}</p>`:''}</div>
+    <div class="card"><b>AI-analyse</b><p class="tiny muted" style="margin:4px 0 10px">Gemini-nøkkel fra aistudio.google.com – den samme som i tarot-appen fungerer. Gratis, med en daglig kvote.</p>
+      <div class="f" style="margin-bottom:8px"><label for="gk">Gemini API-nøkkel</label><input id="gk" value="${esc(st.gemKey||'')}" placeholder="AIza…" autocomplete="off"></div>
+      <button class="btn sm" id="gsave">Lagre</button></div>`);
+  const q=x=>sh.querySelector(x);
+  q('#gsave').onclick=()=>{ st.gemKey=q('#gk').value.trim(); save(); toast('Lagret'); };
+  q('#ptest').onclick=async()=>{ st.apiKey=q('#pk').value.trim(); save();
+    if(!st.apiKey){ q('#pres').textContent='Nøkkel fjernet'; return; }
+    q('#pres').innerHTML='<span class="spin"></span> Tester…';
+    try{ const r=await testProvider(); q('#pres').textContent=r; }catch(e){ q('#pres').textContent='Feil: '+e.message; } };
+}
+
+
+/* ============================================================
+   Views
+   ============================================================ */
+let view='home', txFilter='all', divYear=null;
+function topbar(title, sub, back){
+  return `${back?`<button class="ib" data-act="${back}" aria-label="Tilbake">${ICON.back}</button>`:''}
+    <h1>${esc(title)}${sub?`<small>${esc(sub)}</small>`:''}</h1>
+    <button class="ib" data-act="refresh" aria-label="Oppdater kurser og utbytte">${ICON.refresh}</button>
+    <button class="ib" data-act="theme" aria-label="${DB.settings.theme==='dark'?'Lyst tema':'Mørkt tema'}">${DB.settings.theme==='dark'?ICON.sun:ICON.moon}</button>
+    <button class="ib" data-act="menu" aria-label="Meny">${ICON.menu}</button>`;
+}
+function render(){
+  const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['tx','Transaksjoner',ICON.list],['div','Utbytte',ICON.coin]];
+  $('#tabs').innerHTML=tabs.map(([k,l,i])=>`<button aria-selected="${view===k}" data-tab="${k}">${i}<span>${l}</span></button>`).join('');
+  const C=compute();
+  const T=$('#top'), A=$('#app');
+  if(view==='home'){ T.innerHTML=topbar('Portefølje', lastUpdateText()); A.innerHTML=viewHome(C); }
+  else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} aksjer`); A.innerHTML=viewHold(C); }
+  else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.length} totalt`); A.innerHTML=viewTx(C); }
+  else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'); A.innerHTML=viewDiv(C); }
+  const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:view==='div'?'div':'buy'});
+  $('#fabLbl').textContent=view==='div'?'Nytt utbytte':'Ny transaksjon';
+}
+function lastUpdateText(){
+  const ts=DB.secs.map(s=>s.priceAt).filter(Boolean).sort(); const l=ts[ts.length-1];
+  return l?`Kurser fra ${prettyDate(l.slice(0,10))}`:'Kurser ikke hentet ennå';
+}
+function totals(C){
+  const P=Object.values(C.pos);
+  const value=P.reduce((s,p)=>s+(p.value??p.cost),0), cost=P.reduce((s,p)=>s+p.cost,0);
+  const unreal=P.reduce((s,p)=>s+(p.unreal||0),0), missing=P.filter(p=>p.value==null).length;
+  const real=C.realized.reduce((s,r)=>s+r.gain,0), div=C.divs.reduce((s,d)=>s+d.net,0);
+  return {value,cost,unreal,missing,real,div,total:unreal+real+div};
+}
+function allocHtml(items){
+  const tot=items.reduce((s,x)=>s+x.v,0); if(!tot) return '';
+  const col=i=>`var(--c${(i%8)+1})`;
+  return `<div class="alloc">${items.map((x,i)=>`<i style="width:${x.v/tot*100}%;background:${col(i)}"></i>`).join('')}</div>
+    <div class="legend">${items.map((x,i)=>`<div><i style="background:${col(i)}"></i><span>${esc(x.k)}</span><b class="num">${nf(x.v/tot*100,1)} %</b></div>`).join('')}</div>`;
+}
+function group(C, keyFn){
+  const m={}; Object.values(C.pos).forEach(p=>{ const k=keyFn(p)||'Ukjent'; m[k]=(m[k]||0)+(p.value??p.cost); });
+  return Object.entries(m).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+}
+function viewHome(C){
+  if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner ennå</h3>
+    <p>Legg inn det du har kjøpt og solgt, med dato og kurs. Appen regner ut gevinst, tap og utbytte over tid.</p>
+    <button class="btn solid" data-act="newtx">Legg inn første kjøp</button>
+    <p class="note" style="margin-top:16px">Vil du se hvordan det ser ut først? <button class="tiny" style="color:var(--acc);font-weight:650" data-act="examples">Legg inn eksempeldata</button></p></div>`;
+  const t=totals(C);
+  const yrs={}; C.realized.forEach(r=>{ const y=r.date.slice(0,4), a=acc(r.accId); yrs[y]=yrs[y]||{r:0,ra:0,d:0,da:0}; yrs[y][a&&a.type==='ask'?'ra':'r']+=r.gain; });
+  C.divs.forEach(d=>{ const y=d.date.slice(0,4), a=acc(d.accId); yrs[y]=yrs[y]||{r:0,ra:0,d:0,da:0}; yrs[y][a&&a.type==='ask'?'da':'d']+=d.net; });
+  const hasAsk=DB.accounts.some(a=>a.type==='ask');
+  const ys=Object.keys(yrs).sort().reverse();
+  const sugg=pendingDivs(C).length;
+  return `${C.errors.length?`<div class="card" style="border-color:var(--down)"><b class="down">Noe stemmer ikke</b>${C.errors.map(e=>`<p class="tiny" style="margin:4px 0 0">${esc(prettyDate(e.tx.date))}: ${esc(e.msg)} (${esc(sec(e.tx.secId)?.name||'')})</p>`).join('')}</div>`:''}
+    ${sugg?`<button class="item" data-tab="div" style="border-color:var(--warn)"><div class="b"><b>${sugg} ${sugg===1?'nytt utbytte':'nye utbytter'} funnet</b><span>Trykk for å se og legge dem til</span></div><span class="tag new">Nytt</span></button>`:''}
+    <div class="card hero">
+      <div class="lbl">Markedsverdi nå</div>
+      <div class="big num">${kr(t.value)}</div>
+      <div class="tiny ${cls(t.total)}"><b class="num">${sgn(t.total)} kr</b> totalt siden start · urealisert + realisert + utbytte</div>
+      ${t.missing?`<p class="note" style="margin:6px 0 0">${t.missing} ${t.missing===1?'aksje mangler':'aksjer mangler'} kurs og er regnet til kostpris. Trykk ${'↻'} øverst for å hente kurser.</p>`:''}
+      <div class="kv">
+        <div><span>Investert i det du eier</span><b class="num">${kr(t.cost)}</b></div>
+        <div><span>Urealisert</span><b class="num ${cls(t.unreal)}">${sgn(t.unreal)} kr</b><span class="${cls(t.unreal)}">${pct(t.cost?t.unreal/t.cost*100:null)}</span></div>
+        <div><span>Realisert gevinst/tap</span><b class="num ${cls(t.real)}">${sgn(t.real)} kr</b></div>
+        <div><span>Utbytte mottatt</span><b class="num">${kr(t.div)}</b></div>
+      </div>
+    </div>
+    ${Object.keys(C.pos).length?`<h2 class="sec">Fordeling</h2>
+    <div class="card"><div class="tiny muted" style="font-weight:650">Per aksje</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8))}</div>
+    <div class="two"><div class="card"><div class="tiny muted" style="font-weight:650">Valuta</div>${allocHtml(group(C,p=>sec(p.secId)?.cur))}</div>
+      <div class="card"><div class="tiny muted" style="font-weight:650">Sektor</div>${allocHtml(group(C,p=>sec(p.secId)?.sector))}</div></div>`:''}
+    ${ys.length?`<h2 class="sec">Per år</h2><div class="card"><table class="t"><thead><tr><th>År</th><th>Realisert</th><th>Utbytte</th>${hasAsk?'<th>ASK</th>':''}</tr></thead><tbody>
+      ${ys.map(y=>`<tr><td>${y}</td><td class="${cls(yrs[y].r)}">${sgn(yrs[y].r)}</td><td>${nf(yrs[y].d)}</td>${hasAsk?`<td class="${cls(yrs[y].ra+yrs[y].da)}">${sgn(yrs[y].ra+yrs[y].da)}</td>`:''}</tr>`).join('')}
+      </tbody></table>
+      <p class="note">Kroner. Realisert er regnet etter først inn, først ut, med kurtasje.${hasAsk?' ASK-kolonnen er gevinst og utbytte på aksjesparekonto, som ikke skattlegges før uttak.':''} Bruk tallene som støtte, ikke som fasit, når du fyller ut skattemeldingen.</p></div>`:''}
+    <h2 class="sec">Analyse</h2>
+    <div class="card ai" id="ai">${DB.lastAi?aiHtml(DB.lastAi):`<p class="tiny muted">Få en AI-gjennomgang av porteføljen: spredning, valuta, avhengighet av enkeltselskaper og utbytte. Tips, ikke råd.</p>`}
+      <button class="btn sm" data-act="ai">${DB.lastAi?'Lag ny analyse':'Lag analyse'}</button></div>`;
+}
+function aiHtml(a){
+  return `<div class="tiny muted" style="margin-bottom:8px">${esc(prettyDate(a.date))}</div>${String(a.text).split(/\n{2,}/).map(p=>`<p>${esc(p.trim()).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}</p>`).join('')}
+    <p class="note" style="margin:0 0 10px">Laget av en AI ut fra tallene i appen. Den kjenner ikke nyheter fra i dag og kan ta feil. Ikke finansiell rådgivning.</p>`;
+}
+function viewHold(C){
+  const P=Object.values(C.pos).sort((a,b)=>(b.value??b.cost)-(a.value??a.cost));
+  const closed=DB.secs.filter(s=>!C.pos[s.id]);
+  if(!P.length&&!closed.length) return `<div class="empty"><h3>Ingenting her ennå</h3><p>Aksjene dukker opp når du legger inn et kjøp.</p></div>`;
+  const row=(s,p)=>{ const d12=divLast12(C,s.id);
+    return `<button class="item" data-act="opensec" data-id="${s.id}">
+      <div class="b"><b>${esc(s.name)}</b><span>${p?`${qf(p.qty)} stk · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
+      <div class="r">${p?`<b class="num">${kr(p.value??p.cost)}</b><span class="num ${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):'mangler kurs'}</span>`:`<span class="num ${cls(realOf(C,s.id))}">${sgn(realOf(C,s.id))} kr</span>`}${d12?`<span class="tiny muted num">utb. ${nf(d12)} kr/år</span>`:''}</div></button>`; };
+  return P.map(p=>row(sec(p.secId),p)).join('')+(closed.length?`<h2 class="sec">Tidligere eid</h2>${closed.map(s=>row(s,null)).join('')}`:'');
+}
+const realOf=(C,id)=>C.realized.filter(r=>r.secId===id).reduce((s,r)=>s+r.gain,0);
+function divLast12(C,id){ const from=addDays(today(),-365); return C.divs.filter(d=>d.secId===id&&d.date>=from).reduce((s,d)=>s+d.net,0); }
+function txLine(t){
+  const s=sec(t.secId), a=acc(t.accId), cur=t.cur||s?.cur||'NOK';
+  let what='';
+  if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))} × ${nf(num(t.price),2)} ${cur}`;
+  else if(t.type==='div') what=`${qf(num(t.qty))} × ${nf(num(t.perShare),4).replace(/,?0+$/,'')} ${cur}`;
+  else what=`forhold ${t.ratio}`;
+  const amt=t.type==='buy'?-(num(t.qty)*num(t.price)*(num(t.fx)||1)+(num(t.fee)||0))
+    :t.type==='sell'?num(t.qty)*num(t.price)*(num(t.fx)||1)-(num(t.fee)||0)
+    :t.type==='div'?num(t.qty)*num(t.perShare)*(num(t.fx)||1)-(num(t.tax)||0):null;
+  return `<button class="item" data-act="opentx" data-id="${t.id}">
+    <div class="b"><b>${esc(TYPES[t.type])} · ${esc(s?.name||'?')}</b><span>${esc(prettyDate(t.date))} · ${esc(what)}${DB.accounts.length>1&&a?` · ${esc(a.name)}`:''}</span></div>
+    <div class="r">${amt!=null?`<b class="num ${t.type==='buy'?'':'up'}">${sgn(amt)}</b><span class="tiny muted">kr</span>`:''}</div></button>`;
+}
+function viewTx(){
+  if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner</h3><p>Trykk «Ny transaksjon» for å legge inn et kjøp.</p></div>`;
+  const list=DB.tx.filter(t=>txFilter==='all'||t.type===txFilter).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  let lastY='', out='';
+  for(const t of list){ const y=t.date.slice(0,4); if(y!==lastY){ out+=`<h2 class="sec">${y}</h2>`; lastY=y; } out+=txLine(t); }
+  return `<div class="chips">${[['all','Alle'],['buy','Kjøp'],['sell','Salg'],['div','Utbytte'],['split','Splitt']].map(([k,l])=>`<button class="chip" data-act="txf" data-k="${k}" aria-pressed="${txFilter===k}">${l}</button>`).join('')}</div>${out||'<p class="muted tiny">Ingen i denne kategorien.</p>'}`;
+}
+function viewDiv(C){
+  const pend=pendingDivs(C);
+  const byY={}; C.divs.forEach(d=>{ const y=d.date.slice(0,4); byY[y]=(byY[y]||0)+d.net; });
+  const ys=Object.keys(byY).sort().slice(-8); const max=Math.max(1,...ys.map(y=>byY[y]));
+  const from=addDays(today(),-365); const l12=C.divs.filter(d=>d.date>=from).reduce((s,d)=>s+d.net,0);
+  const P=Object.values(C.pos); const cost=P.reduce((s,p)=>s+p.cost,0), value=P.reduce((s,p)=>s+(p.value??p.cost),0);
+  const perSec={}; C.divs.forEach(d=>{ perSec[d.secId]=(perSec[d.secId]||0)+d.net; });
+  const top=Object.entries(perSec).sort((a,b)=>b[1]-a[1]);
+  const totDiv=top.reduce((s,x)=>s+x[1],0);
+  return `${pend.length?`<h2 class="sec" style="margin-top:4px">Funnet automatisk (${pend.length})</h2>
+      ${pend.map((p,i)=>`<div class="item" style="cursor:default"><div class="b"><b>${esc(sec(p.secId)?.name)} <span class="tag new">Ny</span></b>
+        <span>Eks-dato ${esc(prettyDate(p.exDate))} · ${qf(p.qty)} stk × ${nf(p.amount,4).replace(/,?0+$/,'')} ${p.cur}${DB.accounts.length>1?' · '+esc(acc(p.accId)?.name||''):''}</span></div>
+        <div class="r"><button class="btn sm" data-act="adddiv" data-i="${i}">Legg til</button></div></div>`).join('')}
+      <div class="row"><button class="btn solid full" data-act="addalldiv">Legg til alle</button><button class="btn full" data-act="dismissall">Ignorer</button></div>
+      <p class="note">Antall aksjer er beholdningen dagen før eks-dato. Valutakursen hentes fra Norges Bank for utbetalingsdagen. Sjekk mot sluttseddel/kontoutskrift om kildeskatt er trukket.</p>`:''}
+    <div class="card" style="margin-top:${pend.length?'14px':'0'}">
+      <div class="kv" style="margin-top:0">
+        <div><span>Siste 12 måneder</span><b class="num">${kr(l12)}</b></div>
+        <div><span>Totalt mottatt</span><b class="num">${kr(totDiv)}</b></div>
+        <div><span>Direkteavkastning</span><b class="num">${value?pct(l12/value*100):'–'}</b><span>av markedsverdi</span></div>
+        <div><span>På kostpris</span><b class="num">${cost?pct(l12/cost*100):'–'}</b><span>av det du betalte</span></div>
+      </div>
+      ${ys.length?`<div class="bars">${ys.map(y=>`<div><em>${nf(byY[y]/1000,1)}k</em><i style="height:${Math.max(3,byY[y]/max*100)}%"></i><span>${y}</span></div>`).join('')}</div>`:''}
+    </div>
+    ${top.length?`<h2 class="sec">Per selskap</h2><div class="card"><table class="t"><thead><tr><th>Selskap</th><th>12 mnd</th><th>Totalt</th></tr></thead><tbody>
+      ${top.map(([id,v])=>`<tr><td>${esc(sec(id)?.name||'?')}</td><td>${nf(divLast12(C,id))}</td><td>${nf(v)}</td></tr>`).join('')}</tbody></table>
+      ${top.length&&totDiv?`<p class="note">${esc(sec(top[0][0])?.name)} står for ${nf(top[0][1]/totDiv*100,0)} % av alt utbytte du har fått.</p>`:''}</div>`:''}
+    <h2 class="sec">Utbetalinger</h2>
+    ${C.divs.length?C.divs.slice().reverse().map(d=>txLine(d.tx)).join(''):'<p class="tiny muted">Ingen utbytter ført ennå. Legg inn API-nøkkel under Meny → Datakilder for å finne dem automatisk, eller før dem selv.</p>'}`;
+}
+
+/* ============================================================
+   Sheets
+   ============================================================ */
+function openSheet(html){ closeSheet(); const sc=el('<div class="scrim"></div>'); sc.onclick=closeSheet;
+  const sh=el('<div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div></div>'); sh.appendChild(el(`<div>${html}</div>`));
+  document.body.append(sc,sh); return sh; }
+function closeSheet(){ document.querySelectorAll('.scrim,.sheet').forEach(n=>n.remove()); }
+function confirmBox(msg){ return confirm(msg); }
+
+function secOptions(cur){ return DB.secs.slice().sort((a,b)=>a.name.localeCompare(b.name,'nb')).map(s=>`<option value="${s.id}" ${s.id===cur?'selected':''}>${esc(s.name)}${s.ticker?' ('+esc(s.ticker)+')':''}</option>`).join(''); }
+function accOptions(cur){ return DB.accounts.map(a=>`<option value="${a.id}" ${a.id===cur?'selected':''}>${esc(a.name)}${a.type==='ask'?' (ASK)':''}</option>`).join(''); }
+
+function txSheet(id, preset){
+  const t=id?DB.tx.find(x=>x.id===id):Object.assign({type:'buy',date:today(),secId:DB.lastSec||'',accId:DB.lastAcc||DB.accounts[0].id,qty:'',price:'',fee:'',fx:'',cur:'',perShare:'',tax:'',ratio:''},preset||{});
+  if(!t) return;
+  let type=t.type;
+  const sh=openSheet(`<h3>${id?'Endre transaksjon':'Ny transaksjon'}</h3><p class="sub">Beløp i aksjens valuta. Kurtasje og kildeskatt i kroner.</p>
+    <div class="seg" id="ttype">${Object.entries(TYPES).map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${k===type}">${l}</button>`).join('')}</div>
+    <div class="f"><label for="tsec">Aksje</label><div class="row"><select id="tsec" style="flex:1"><option value="">Velg…</option>${secOptions(t.secId)}</select>
+      <button type="button" class="btn sm" id="tnewsec">+ Ny</button></div></div>
+    <div class="two"><div class="f"><label for="tdate" id="ldate">Dato</label><input id="tdate" value="${esc(isoToDMY(t.date))}" placeholder="DD.MM.ÅÅÅÅ" inputmode="numeric"></div>
+      <div class="f"><label for="tacc">Konto</label><select id="tacc">${accOptions(t.accId)}</select></div></div>
+    <div id="wtrade" class="two">
+      <div class="f"><label for="tqty">Antall</label><input id="tqty" inputmode="decimal" value="${esc(t.qty)}"></div>
+      <div class="f"><label for="tpx" id="lpx">Kurs</label><input id="tpx" inputmode="decimal" value="${esc(t.price)}"></div></div>
+    <div id="wdiv">
+      <div class="two"><div class="f"><label for="tps" id="lps">Utbytte per aksje</label><input id="tps" inputmode="decimal" value="${esc(t.perShare)}"></div>
+        <div class="f"><label for="tdq">Antall aksjer</label><input id="tdq" inputmode="decimal" value="${esc(t.type==='div'?t.qty:'')}"><p class="hint" id="hdq"></p></div></div>
+      <div class="two"><div class="f"><label for="tcur">Valuta for utbyttet</label><select id="tcur">${CURS.map(c=>`<option ${c===(t.cur||'NOK')?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="f"><label for="ttax">Kildeskatt trukket (kr)</label><input id="ttax" inputmode="decimal" value="${esc(t.tax)}" placeholder="0"></div></div>
+      <div class="f"><label for="tex">Eks-dato (valgfri)</label><input id="tex" value="${esc(isoToDMY(t.exDate))}" placeholder="DD.MM.ÅÅÅÅ" inputmode="numeric"><p class="hint">Med eks-dato regnes antall aksjer ut automatisk.</p></div>
+    </div>
+    <div id="wsplit" class="f"><label for="trat">Nye aksjer per gammel aksje</label><input id="trat" inputmode="decimal" value="${esc(t.ratio)}" placeholder="f.eks. 2 (1:2-splitt) eller 0,1 (spleis 10:1)"></div>
+    <div id="wfx" class="f"><label for="tfx" id="lfx">Valutakurs</label><div class="row"><input id="tfx" inputmode="decimal" value="${esc(t.fx)}" style="flex:1"><button type="button" class="btn sm" id="tgetfx">Hent</button></div><p class="hint" id="hfx"></p></div>
+    <div id="wfee" class="f"><label for="tfee">Kurtasje (kr)</label><input id="tfee" inputmode="decimal" value="${esc(t.fee)}" placeholder="0"></div>
+    <div class="f"><label for="tnote">Notat</label><input id="tnote" value="${esc(t.note||'')}" placeholder="Valgfritt"></div>
+    <p class="hint" id="tsum" style="margin:-2px 2px 12px;font-size:14px;color:var(--muted)"></p>
+    <button class="btn solid full" id="tsave">${id?'Lagre endringer':'Lagre'}</button>
+    ${id?`<button class="btn danger full" id="tdel" style="margin-top:10px">Slett transaksjon</button>`:''}`);
+  const q=s=>sh.querySelector(s);
+  const curOf=()=>{ const s=sec(q('#tsec').value); return type==='div'?q('#tcur').value:(s?s.cur:'NOK'); };
+  const sync=()=>{
+    q('#wtrade').style.display=(type==='buy'||type==='sell')?'':'none';
+    q('#wdiv').style.display=type==='div'?'':'none';
+    q('#wsplit').style.display=type==='split'?'':'none';
+    q('#wfee').style.display=(type==='buy'||type==='sell')?'':'none';
+    const cur=curOf();
+    q('#wfx').style.display=(type!=='split'&&cur!=='NOK')?'':'none';
+    q('#lfx').textContent=`Valutakurs (kr per ${cur})`;
+    q('#lpx').textContent=`Kurs (${cur})`; q('#lps').textContent=`Utbytte per aksje (${cur})`;
+    q('#ldate').textContent=type==='div'?'Utbetalt':'Dato';
+    summary();
+  };
+  const summary=()=>{ const cur=curOf(), fx=cur==='NOK'?1:num(q('#tfx').value); let txt='';
+    if(type==='buy'||type==='sell'){ const a=num(q('#tqty').value)*num(q('#tpx').value)*fx, f=num(q('#tfee').value)||0;
+      if(a>0) txt=type==='buy'?`Totalt betalt: ${kr(a+f,2)}`:`Du får: ${kr(a-f,2)}`; }
+    if(type==='div'){ const a=num(q('#tdq').value)*num(q('#tps').value)*fx, tx=num(q('#ttax').value)||0; if(a>0) txt=`Utbytte: ${kr(a,2)}${tx?` · netto ${kr(a-tx,2)}`:''}`; }
+    if(type==='sell'){ const held=qtyHeld(q('#tsec').value, q('#tacc').value, addDays(dmyToIso(q('#tdate').value)||today(),1)) - (id&&t.type==='sell'?0:0);
+      if(q('#tsec').value) txt+=`${txt?' · ':''}Du eier ${qf(held+(id&&t.type==='sell'?num(t.qty):0))} stk`; }
+    q('#tsum').textContent=txt; };
+  const autoQty=()=>{ const ex=dmyToIso(q('#tex').value), s=q('#tsec').value; if(!ex||!s) { q('#hdq').textContent=''; return; }
+    const n=qtyHeld(s,q('#tacc').value,ex); q('#tdq').value=String(n).replace('.',','); q('#hdq').textContent=`Eide ${qf(n)} stk dagen før eks-dato`; summary(); };
+  sh.querySelectorAll('#ttype [data-k]').forEach(b=>b.onclick=()=>{ type=b.dataset.k; sh.querySelectorAll('#ttype [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    if(type==='div'){ const s=sec(q('#tsec').value); if(s&&!id) q('#tcur').value=s.divCur||s.cur; } sync(); });
+  q('#tsec').onchange=()=>{ const s=sec(q('#tsec').value); if(s&&type==='div') q('#tcur').value=s.divCur||s.cur; q('#tfx').value=''; sync(); autoQty(); };
+  q('#tcur').onchange=()=>{ q('#tfx').value=''; sync(); };
+  ['#tqty','#tpx','#tfee','#tfx','#tps','#tdq','#ttax','#tdate'].forEach(s=>q(s).oninput=summary);
+  q('#tex').onchange=autoQty; q('#tacc').onchange=()=>{ autoQty(); summary(); };
+  q('#tnewsec').onclick=()=>secSheet(null, s=>{ txSheet(id, Object.assign({}, collect(true), {secId:s.id})); });
+  q('#tgetfx').onclick=async()=>{ const cur=curOf(), d=dmyToIso(q('#tdate').value)||today();
+    q('#hfx').innerHTML='<span class="spin"></span> Henter fra Norges Bank…';
+    try{ const r=await fxOn(cur,d); q('#tfx').value=String(r.rate).replace('.',','); q('#hfx').textContent=`Norges Bank ${prettyDate(r.date)}: ${nf(r.rate,4)} kr per ${cur}`; summary(); }
+    catch(e){ q('#hfx').textContent=`Fikk ikke hentet kurs (${e.message}). Skriv den inn selv.`; } };
+  const collect=(loose)=>({type, secId:q('#tsec').value, accId:q('#tacc').value, date:dmyToIso(q('#tdate').value)||(loose?today():null),
+    qty:type==='div'?q('#tdq').value:q('#tqty').value, price:q('#tpx').value, fee:q('#tfee').value, fx:q('#tfx').value,
+    cur:type==='div'?q('#tcur').value:(sec(q('#tsec').value)?.cur||'NOK'), perShare:q('#tps').value, tax:q('#ttax').value, ratio:q('#trat').value,
+    exDate:dmyToIso(q('#tex').value)||'', note:q('#tnote').value.trim()});
+  sync();
+  q('#tsave').onclick=async()=>{
+    const d=collect(false); sh.querySelectorAll('.bad').forEach(x=>x.classList.remove('bad'));
+    const bad=(s,m)=>{ q(s).classList.add('bad'); q(s).focus(); toast(m); };
+    if(!d.secId) return bad('#tsec','Velg aksje');
+    if(!d.date) return bad('#tdate','Dato må være DD.MM.ÅÅÅÅ');
+    if(type==='buy'||type==='sell'){ if(!(num(d.qty)>0)) return bad('#tqty','Skriv inn antall'); if(!(num(d.price)>0)) return bad('#tpx','Skriv inn kurs'); }
+    if(type==='div'){ if(!(num(d.perShare)>0)) return bad('#tps','Skriv inn utbytte per aksje'); if(!(num(d.qty)>0)) return bad('#tdq','Skriv inn antall aksjer'); }
+    if(type==='split'&&!(num(d.ratio)>0)) return bad('#trat','Skriv inn forholdet');
+    const cur=d.cur;
+    if(type!=='split'&&cur!=='NOK'&&!(num(d.fx)>0)){
+      q('#hfx').innerHTML='<span class="spin"></span> Henter valutakurs…';
+      try{ const r=await fxOn(cur,d.date); d.fx=String(r.rate); }
+      catch(e){ return bad('#tfx',`Mangler valutakurs for ${cur}`); }
+    }
+    if(type==='sell'){ const held=qtyHeld(d.secId,d.accId,addDays(d.date,1))+(id&&t.type==='sell'&&t.secId===d.secId&&t.accId===d.accId&&t.date<=d.date?num(t.qty):0);
+      if(num(d.qty)>held+1e-9) return bad('#tqty',`Du eier bare ${qf(held)} på denne kontoen da`); }
+    if(type!=='div'){ delete d.perShare; delete d.tax; delete d.exDate; }
+    if(id) Object.assign(t,d); else DB.tx.push({id:uid(),created:Date.now(),...d});
+    DB.lastSec=d.secId; DB.lastAcc=d.accId;
+    save(); closeSheet(); render(); toast(id?'Endret':'Lagret');
+  };
+  const del=q('#tdel'); if(del) del.onclick=()=>{ if(!confirmBox('Slette denne transaksjonen?')) return; DB.tx=DB.tx.filter(x=>x.id!==id); save(); closeSheet(); render(); toast('Slettet'); };
+}
+
+function secSheet(id, onSaved){
+  const s=id?sec(id):{name:'',ticker:'',cur:'NOK',divCur:'',sector:'',price:''};
+  const C=compute(), p=id?C.pos[id]:null;
+  const txs=id?DB.tx.filter(t=>t.secId===id).sort((a,b)=>b.date.localeCompare(a.date)):[];
+  const sh=openSheet(`<h3>${id?esc(s.name):'Ny aksje'}</h3><p class="sub">${id?(p?`${qf(p.qty)} stk · snitt ${nf(p.avg,2)} kr`:'Ingen beholdning'):'Navn og ticker. Tickeren brukes til å hente kurs og utbytte.'}</p>
+    ${p?`<div class="card"><div class="kv" style="margin-top:0">
+      <div><span>Markedsverdi</span><b class="num">${kr(p.value)}</b><span>${s.price?`${nf(num(s.price),2)} ${s.cur}${s.priceAt?' · '+prettyDate(s.priceAt.slice(0,10)):''}`:'mangler kurs'}</span></div>
+      <div><span>Urealisert</span><b class="num ${cls(p.unreal)}">${p.unreal!=null?sgn(p.unreal)+' kr':'–'}</b><span class="${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):''}</span></div>
+      <div><span>Realisert</span><b class="num ${cls(realOf(C,id))}">${sgn(realOf(C,id))} kr</b></div>
+      <div><span>Utbytte totalt</span><b class="num">${kr(C.divs.filter(d=>d.secId===id).reduce((a,d)=>a+d.net,0))}</b></div></div></div>`:''}
+    <div class="two"><div class="f"><label for="sn">Navn</label><input id="sn" value="${esc(s.name)}" placeholder="f.eks. Equinor"></div>
+      <div class="f"><label for="st">Ticker</label><input id="st" value="${esc(s.ticker)}" placeholder="f.eks. EQNR" autocapitalize="characters"></div></div>
+    <div class="two"><div class="f"><label for="sc">Handles i</label><select id="sc">${CURS.map(c=>`<option ${c===s.cur?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="f"><label for="sdc">Utbytte i</label><select id="sdc"><option value="">Samme</option>${CURS.map(c=>`<option ${c===s.divCur?'selected':''}>${c}</option>`).join('')}</select></div></div>
+    <div class="two"><div class="f"><label for="ssec">Sektor</label><input id="ssec" value="${esc(s.sector||'')}" placeholder="f.eks. Shipping" list="sectors"><datalist id="sectors">${[...new Set(DB.secs.map(x=>x.sector).filter(Boolean).concat(['Energi','Shipping','Finans','Sjømat','Teknologi','Industri','Eiendom','Helse','Forbruk','Råvarer','Fond']))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
+      <div class="f"><label for="spx">Kurs nå (${esc(s.cur)})</label><input id="spx" inputmode="decimal" value="${esc(s.price)}" placeholder="hentes automatisk"></div></div>
+    <p class="hint" style="margin:-6px 2px 12px">Eksempel: 2020 Bulkers handles i NOK på Oslo Børs, men betaler utbytte i USD.</p>
+    <button class="btn solid full" id="ssave">${id?'Lagre':'Legg til aksje'}</button>
+    ${id?`<button class="btn full" id="sfetch" style="margin-top:10px">Hent kurs og utbytte nå</button><p class="hint" id="sfh" style="margin:6px 2px 0"></p>`:''}
+    ${p&&p.lots.length?`<h2 class="sec">Kjøpsposter som fortsatt eies (FIFO)</h2><div class="card"><table class="t"><thead><tr><th>Kjøpt</th><th>Antall</th><th>Kost/stk</th></tr></thead><tbody>
+      ${p.lots.map(l=>`<tr><td>${esc(prettyDate(l.date))}${DB.accounts.length>1?` <span class="tiny muted">${esc(acc(l.accId)?.name||'')}</span>`:''}</td><td>${qf(l.q)}</td><td>${nf(l.cpu,2)}</td></tr>`).join('')}</tbody></table>
+      <p class="note">Ved salg går de eldste først, slik Skatteetaten regner.</p></div>`:''}
+    ${txs.length?`<h2 class="sec">Transaksjoner</h2>${txs.map(txLine).join('')}`:''}
+    ${id?`<button class="btn danger full" id="sdel" style="margin-top:12px">Slett aksjen${txs.length?' og alle transaksjonene':''}</button>`:''}`);
+  const q=x=>sh.querySelector(x);
+  q('#sc').onchange=()=>{ q('label[for=spx]').textContent=`Kurs nå (${q('#sc').value})`; };
+  if(!id) setTimeout(()=>q('#sn').focus(),120);
+  sh.querySelectorAll('[data-act=opentx]').forEach(b=>b.onclick=()=>txSheet(b.dataset.id));
+  q('#ssave').onclick=()=>{
+    const name=q('#sn').value.trim(); if(!name){ q('#sn').classList.add('bad'); q('#sn').focus(); return toast('Skriv inn navn'); }
+    const d={name, ticker:q('#st').value.trim().toUpperCase(), cur:q('#sc').value, divCur:q('#sdc').value, sector:q('#ssec').value.trim()};
+    const px=num(q('#spx').value);
+    let s2;
+    if(id){ const chg=String(px)!==String(num(s.price)); Object.assign(s,d); if(chg){ s.price=px>0?px:''; s.priceAt=px>0?new Date().toISOString():''; s.priceSrc='manuell'; } s2=s; }
+    else { s2={id:uid(),...d,price:px>0?px:'',priceAt:px>0?new Date().toISOString():'',priceSrc:px>0?'manuell':''}; DB.secs.push(s2); }
+    save(); render();
+    if(onSaved) return onSaved(s2);
+    closeSheet(); toast('Lagret');
+  };
+  if(id){
+    q('#sfetch').onclick=async()=>{ q('#sfh').innerHTML='<span class="spin"></span> Henter…';
+      const r=await refreshSec(s, true); q('#sfh').textContent=r; render(); };
+    q('#sdel').onclick=()=>{ if(!confirmBox(`Slette ${s.name}${txs.length?` og ${txs.length} transaksjoner`:''}?`)) return;
+      DB.secs=DB.secs.filter(x=>x.id!==id); DB.tx=DB.tx.filter(t=>t.secId!==id); delete DB.divCache[id]; save(); closeSheet(); render(); toast('Slettet'); };
+  }
+}
+
+function accountsSheet(){
+  const C=compute();
+  const sh=openSheet(`<h3>Kontoer</h3><p class="sub">Aksjesparekonto (ASK) holdes for seg, fordi gevinst og utbytte der ikke skattlegges før du tar ut penger.</p>
+    ${DB.accounts.map((a,i)=>`<div class="card row" style="padding:10px 12px"><div style="flex:1"><b>${esc(a.name)}</b> ${a.type==='ask'?'<span class="tag ask">ASK</span>':'<span class="tag">Ordinær</span>'}</div>
+      <button class="btn sm" data-ren="${i}">Endre</button>${DB.accounts.length>1?`<button class="btn sm danger" data-del="${i}">✕</button>`:''}</div>`).join('')}
+    <div class="card"><div class="f"><label for="an">Ny konto</label><input id="an" placeholder="f.eks. ASK hos Nordnet"></div>
+      <div class="seg" id="at" style="margin-bottom:10px"><button type="button" data-k="ord" aria-pressed="true">Ordinær</button><button type="button" data-k="ask" aria-pressed="false">Aksjesparekonto</button></div>
+      <button class="btn full" id="aadd">Legg til konto</button></div>`);
+  let typ='ord';
+  sh.querySelectorAll('#at [data-k]').forEach(b=>b.onclick=()=>{ typ=b.dataset.k; sh.querySelectorAll('#at [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
+  sh.querySelector('#aadd').onclick=()=>{ const n=sh.querySelector('#an').value.trim(); if(!n) return sh.querySelector('#an').focus();
+    DB.accounts.push({id:uid(),name:n,type:typ}); save(); render(); accountsSheet(); toast('Konto lagt til'); };
+  sh.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{ const a=DB.accounts[+b.dataset.ren];
+    const n=prompt('Navn på kontoen',a.name); if(n==null) return; if(n.trim()) a.name=n.trim();
+    a.type=confirm('Er dette en aksjesparekonto (ASK)?\nOK = ASK, Avbryt = ordinær konto')?'ask':'ord'; save(); render(); accountsSheet(); });
+  sh.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{ const a=DB.accounts[+b.dataset.del]; const n=DB.tx.filter(t=>t.accId===a.id).length;
+    if(n) return toast(`Kontoen har ${n} transaksjoner – flytt eller slett dem først`);
+    if(!confirmBox(`Slette ${a.name}?`)) return; DB.accounts.splice(+b.dataset.del,1); save(); render(); accountsSheet(); });
+}
+
+function menuSheet(){
+  const sh=openSheet(`<h3>Meny</h3><p class="sub">Alt lagres bare på denne enheten. Ta backup innimellom.</p>
+    <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="src">Datakilder og nøkler</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer (${DB.secs.length})</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="backup">Last ned backup</button>
+    <label class="btn full" style="margin-bottom:8px">Gjenopprett fra fil<input type="file" id="imp" accept=".json,application/json" hidden></label>
+    <button class="btn full" style="margin-bottom:8px" data-m="csv">Eksporter transaksjoner (CSV)</button>
+    ${!DB.tx.length?'<button class="btn full" style="margin-bottom:8px" data-m="ex">Legg inn eksempeldata</button>':''}
+    <button class="btn danger full" data-m="wipe">Slett alt</button>`);
+  const m=k=>sh.querySelector(`[data-m="${k}"]`);
+  m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet;
+  m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer</h3><p class="sub">Trykk for å endre navn, ticker, valuta eller sektor.</p>
+      ${DB.secs.map(s=>`<button class="item" data-id="${s.id}"><div class="b"><b>${esc(s.name)}</b><span>${esc(s.ticker||'uten ticker')} · ${s.cur}${s.divCur&&s.divCur!==s.cur?' · utbytte i '+s.divCur:''}${s.sector?' · '+esc(s.sector):''}</span></div></button>`).join('')}
+      <button class="btn ghost full" id="snew">+ Ny aksje</button>`);
+    s2.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>secSheet(b.dataset.id)); s2.querySelector('#snew').onclick=()=>secSheet(null); };
+  m('backup').onclick=()=>{ const blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'}); dl(blob,`portefolje-${today()}.json`); toast('Backup lastet ned'); };
+  m('csv').onclick=()=>{ const rows=[['Dato','Type','Aksje','Ticker','Konto','Antall','Kurs','Valuta','Valutakurs','Kurtasje','Utbytte per aksje','Kildeskatt','Forhold','Notat']];
+    sortedTx().forEach(t=>{ const s=sec(t.secId)||{}; rows.push([t.date,TYPES[t.type],s.name,s.ticker,acc(t.accId)?.name,t.qty,t.price,t.cur||s.cur,t.fx,t.fee,t.perShare,t.tax,t.ratio,t.note]); });
+    const csv='﻿'+rows.map(r=>r.map(v=>{ const x=String(v??''); return /[;"\n]/.test(x)?`"${x.replace(/"/g,'""')}"`:x; }).join(';')).join('\n');
+    dl(new Blob([csv],{type:'text/csv'}),`transaksjoner-${today()}.csv`); };
+  sh.querySelector('#imp').onchange=e=>{ const f=e.target.files[0]; if(!f) return;
+    f.text().then(txt=>{ try{ const j=JSON.parse(txt); if(!Array.isArray(j.tx)||!Array.isArray(j.secs)) throw 0;
+      if(!confirmBox('Erstatte alt på denne enheten med innholdet i fila?')) return;
+      DB=j; normalize(); save(); applyTheme(); closeSheet(); render(); toast('Gjenopprettet'); }catch(_){ toast('Fila er ikke en backup fra denne appen'); } }); };
+  const ex=m('ex'); if(ex) ex.onclick=()=>{ addExamples(); closeSheet(); };
+  m('wipe').onclick=()=>{ if(!confirmBox('Slette alle transaksjoner, aksjer og kontoer? Nøkler og tema beholdes.')) return;
+    const keep=DB.settings; DB=blank(); DB.settings=keep; save(); closeSheet(); render(); toast('Alt slettet'); };
+}
+function dl(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+
+function addExamples(){
+  const A=DB.accounts[0].id;
+  const ask={id:uid(),name:'Aksjesparekonto',type:'ask'}; DB.accounts.push(ask);
+  const S=(name,ticker,cur,sector,price,divCur)=>{ const s={id:uid(),name,ticker,cur,divCur:divCur||'',sector,price,priceAt:new Date().toISOString(),priceSrc:'eksempel'}; DB.secs.push(s); return s.id; };
+  const eq=S('Equinor','EQNR','NOK','Energi',265), bu=S('2020 Bulkers','2020','NOK','Shipping',118,'USD'), dnb=S('DNB Bank','DNB','NOK','Finans',232), ms=S('Microsoft','MSFT','USD','Teknologi',420);
+  DB.fx.USD={rate:10.9,date:today(),src:'eksempel'};
+  const M=m=>{ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-m); d.setDate(12); return ymd(d); };
+  const T=(o)=>DB.tx.push({id:uid(),created:Date.now()+DB.tx.length,fee:'',fx:'',...o});
+  T({type:'buy',date:M(44),secId:eq,accId:A,qty:'100',price:'310',fee:'49',cur:'NOK'});
+  T({type:'buy',date:M(29),secId:eq,accId:A,qty:'50',price:'290',fee:'49',cur:'NOK'});
+  T({type:'sell',date:M(21),secId:eq,accId:A,qty:'60',price:'280',fee:'49',cur:'NOK'});
+  T({type:'buy',date:M(34),secId:bu,accId:ask.id,qty:'400',price:'95',fee:'39',cur:'NOK'});
+  T({type:'div',date:M(20),secId:bu,accId:ask.id,qty:'400',perShare:'0.40',cur:'USD',fx:'10.6',tax:''});
+  T({type:'div',date:M(14),secId:bu,accId:ask.id,qty:'400',perShare:'0.35',cur:'USD',fx:'10.8',tax:''});
+  T({type:'div',date:M(8),secId:bu,accId:ask.id,qty:'400',perShare:'0.30',cur:'USD',fx:'10.7',tax:''});
+  T({type:'buy',date:M(18),secId:dnb,accId:A,qty:'80',price:'205',fee:'49',cur:'NOK'});
+  T({type:'div',date:M(7),secId:dnb,accId:A,qty:'80',perShare:'16',cur:'NOK',tax:''});
+  T({type:'buy',date:M(12),secId:ms,accId:A,qty:'5',price:'415',fee:'99',cur:'USD',fx:'11.0'});
+  T({type:'div',date:M(5),secId:eq,accId:A,qty:'90',perShare:'0.37',cur:'USD',fx:'10.75',tax:''});
+  save(); render(); toast('Eksempeldata lagt inn – slett det under Meny når du vil');
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+function applyTheme(){ const d=DB.settings.theme==='dark'; document.documentElement.classList.toggle('dark',d);
+  document.querySelector('meta[name=theme-color]').content=d?'#0F1614':'#F3F5F2'; }
+document.addEventListener('click',e=>{
+  if(e.target.closest('.sheet')&&!e.target.closest('.sheet [data-act=opentx],.sheet [data-act=opensec]')) return;
+  const tb=e.target.closest('[data-tab]'); if(tb&&!e.target.closest('.sheet')){ view=tb.dataset.tab; render(); scrollTo(0,0); return; }
+  const b=e.target.closest('[data-act]'); if(!b) return; const a=b.dataset.act;
+  if(a==='theme'){ DB.settings.theme=DB.settings.theme==='dark'?'light':'dark'; save(); applyTheme(); render(); }
+  else if(a==='menu') menuSheet();
+  else if(a==='newtx') txSheet(null,{type:'buy'});
+  else if(a==='examples') addExamples();
+  else if(a==='opentx') txSheet(b.dataset.id);
+  else if(a==='opensec') secSheet(b.dataset.id);
+  else if(a==='txf'){ txFilter=b.dataset.k; render(); }
+  else if(a==='refresh') refreshAll();
+  else if(a==='ai') runAi();
+  else if(a==='adddiv'){ const p=pendingDivs(compute())[+b.dataset.i]; if(p) addPending([p]); }
+  else if(a==='addalldiv') addPending(pendingDivs(compute()));
+  else if(a==='dismissall'){ pendingDivs(compute()).forEach(p=>{ (DB.dismissed[p.secId]=DB.dismissed[p.secId]||[]).push(p.exDate+'|'+p.accId); }); save(); render(); toast('Ignorert'); }
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
+applyTheme(); render();
+setTimeout(()=>autoRefresh(),400);
+</script>
+</body>
+</html>

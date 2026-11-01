@@ -7,6 +7,9 @@ Alle appene: https://jorq-spec.github.io/Vibe/
 - Peach: https://jorq-spec.github.io/Vibe/peach/
 - Bror: https://jorq-spec.github.io/Vibe/bror/
 
+## Økonomi
+- Portefølje: https://jorq-spec.github.io/Vibe/portefolje/
+
 ## Andre
 - BJJ Map: https://jorq-spec.github.io/Vibe/bjj/
 - Parfymesamling: https://jorq-spec.github.io/Vibe/parfyme/
