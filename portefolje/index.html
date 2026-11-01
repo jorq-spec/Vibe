@@ -265,7 +265,7 @@ function compute(){
       let q=num(t.qty); const proceeds=q*num(t.price)*(txFx(t)||1)-(num(t.fee)||0);
       let cost=0; const sold=q;
       while(q>1e-9&&L.length){ const l=L[0], take=Math.min(l.q,q); cost+=take*l.cpu; l.q-=take; q-=take; if(l.q<=1e-9) L.shift(); }
-      if(q>1e-9) errors.push({tx:t, msg:`Salget er ${qf(q)} aksjer større enn beholdningen`});
+      if(q>1e-4) errors.push({tx:t, msg:`Salget er ${qf(q)} aksjer større enn beholdningen`});
       realized.push({tx:t, date:t.date, secId:t.secId, accId:t.accId, qty:sold, proceeds, cost, gain:proceeds-cost});
     } else if(t.type==='div'){
       const gross=num(t.qty)*num(t.perShare)*(txFx(t)||1), tax=num(t.tax)||0;
@@ -274,7 +274,7 @@ function compute(){
   }
   const pos={};
   for(const [k,L] of Object.entries(lots)){
-    const [accId,secId]=k.split('|'); const q=L.reduce((s,l)=>s+l.q,0); if(q<1e-9) continue;
+    const [accId,secId]=k.split('|'); const q=L.reduce((s,l)=>s+l.q,0); if(q<1e-4) continue;
     const cost=L.reduce((s,l)=>s+l.q*l.cpu,0);
     const p=pos[secId]=pos[secId]||{secId,qty:0,cost:0,byAcc:{},lots:[]};
     p.qty+=q; p.cost+=cost; p.byAcc[accId]=(p.byAcc[accId]||0)+q; L.forEach(l=>p.lots.push({...l,accId}));
@@ -642,6 +642,107 @@ function calDaySheet(k){
     ${x&&x.events.length?x.events.map(txLine).join(''):'<p class="tiny muted">Ingen transaksjoner denne dagen.</p>'}`);
 }
 
+/* ============================================================
+   Import from a fund house's transaction export (KLP's CSV and similar:
+   Fondsnavn, ISIN, Transaksjonstype, Antall andeler, Pris pr andel,
+   Handelsbeløp, Handelsdato …). Units in these files are rounded to two
+   decimals, so units are recomputed as amount / price to keep sells exact.
+   ============================================================ */
+function parseCsv(text){
+  text=text.replace(/^﻿/,'');
+  const first=text.split(/\r?\n/)[0]||'';
+  const delim=(first.split(';').length>first.split(',').length)?';':',';
+  const rows=[]; let row=[], f='', q=false;
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"') q=true;
+    else if(c===delim){ row.push(f); f=''; }
+    else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(f); f=''; if(row.some(x=>x.trim()!=='')) rows.push(row); row=[]; }
+    else f+=c; }
+  row.push(f); if(row.some(x=>x.trim()!=='')) rows.push(row);
+  return rows;
+}
+const MON_EN={jan:1,feb:2,mar:3,apr:4,may:5,mai:5,jun:6,jul:7,aug:8,sep:9,oct:10,okt:10,nov:11,dec:12,des:12};
+function parseAnyDate(v){
+  const s=String(v||'').trim(); let m=s.match(/^(\d{1,2})[\/. -]([A-Za-zæøå]{3})[a-zæøå]*\.?[\/. -](\d{4})$/);
+  if(m){ const mo=MON_EN[m[2].toLowerCase()]; if(mo) return `${m[3]}-${pad(mo)}-${pad(m[1])}`; }
+  return dmyToIso(s);
+}
+const numNo=v=>{ const s=String(v??'').replace(/[\s ]/g,''); if(!s) return NaN; return Number(s.includes(',')?s.replace(/\./g,'').replace(',','.'):s); };
+function fundSector(name){ const n=name.toLowerCase();
+  return /fremvoksende|emerging/.test(n)?'Fremvoksende markeder':/norden|nordic/.test(n)?'Norden':/norge|norway|norsk/.test(n)?'Norge':/global|verden|world/.test(n)?'Global':/rente|obligasjon|pengemarked|kreditt/.test(n)?'Renter':'Fond'; }
+const TXMAP=[[/^(kjøp|kjop|tegning|innskudd|sparing|spareavtale|månedlig sparing|buy)/i,'buy'],[/^(salg|innløsning|innlosning|uttak|sell)/i,'sell'],[/utbytte/i,'div']];
+
+function readFundCsv(text){
+  const rows=parseCsv(text); if(rows.length<2) throw new Error('Fila er tom');
+  const H=rows[0].map(h=>h.trim().toLowerCase());
+  const col=(...names)=>H.findIndex(h=>names.some(n=>h===n||h.startsWith(n)));
+  const c={name:col('fondsnavn','fond','verdipapir','navn'), isin:col('isin'), type:col('transaksjonstype','type'), units:col('antall andeler','antall'),
+    price:col('pris pr andel','kurs','andelskurs','pris'), amount:col('handelsbeløp','beløp','belop'), date:col('handelsdato','dato'), nav:col('nav dato')};
+  if(c.name<0||c.type<0||c.date<0||(c.amount<0&&c.units<0)) throw new Error('Kjente ikke igjen kolonnene. Forventet bl.a. Fondsnavn, Transaksjonstype og Handelsdato.');
+  const out=[], skipped=[];
+  rows.slice(1).forEach((r,i)=>{
+    const typeTxt=(r[c.type]||'').trim(), kind=(TXMAP.find(([re])=>re.test(typeTxt))||[])[1];
+    const date=parseAnyDate(r[c.date]), price=numNo(r[c.price]), amount=numNo(r[c.amount]), unitsRaw=numNo(r[c.units]);
+    if(!kind||!date){ skipped.push(`Linje ${i+2}: «${typeTxt||'?'}» ${r[c.date]||''}`); return; }
+    let units=unitsRaw;
+    if(amount>0&&price>0) units=Math.round(amount/price*1e6)/1e6;      // exact, not the rounded 2-decimal figure
+    if(!(units>0)||!(price>0)){ skipped.push(`Linje ${i+2}: mangler antall eller kurs`); return; }
+    out.push({name:(r[c.name]||'').trim(), isin:(c.isin>=0?r[c.isin]:'').trim().toUpperCase(), kind, date, units, price, amount, nav:c.nav>=0?parseAnyDate(r[c.nav]):''});
+  });
+  return {rows:out, skipped};
+}
+
+function importSheet(){
+  const sh=openSheet(`<h3>Importer transaksjoner</h3><p class="sub">CSV fra fondsforvalteren, f.eks. KLP: Min side → Transaksjoner → Eksporter som CSV.</p>
+    <label class="btn solid full" style="margin-bottom:10px">Velg CSV-fil<input type="file" id="impf" accept=".csv,text/csv,text/plain" hidden></label>
+    <div id="impres"></div>`);
+  sh.querySelector('#impf').onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    let parsed; try{ parsed=readFundCsv(await f.text()); }catch(err){ sh.querySelector('#impres').innerHTML=`<p class="down tiny">${esc(err.message)}</p>`; return; }
+    importPreview(sh, parsed, f.name);
+  };
+}
+function importPreview(sh, parsed, fname){
+  const R=parsed.rows;
+  const funds=[...new Map(R.map(r=>[r.isin||r.name,r])).values()];
+  const existingSec=r=>DB.secs.find(s=>(r.isin&&s.ticker===r.isin)||s.name.toLowerCase()===r.name.toLowerCase());
+  const isDup=r=>{ const s=existingSec(r); if(!s) return false;
+    return DB.tx.some(t=>t.secId===s.id&&t.type===r.kind&&t.date===r.date&&Math.abs(num(t.qty)*num(t.price)-r.units*r.price)<1); };
+  const fresh=R.filter(r=>!isDup(r)), dups=R.length-fresh.length;
+  const guess=DB.accounts.find(a=>/klp/i.test(a.name))?.id||'__new';
+  sh.querySelector('#impres').innerHTML=`<div class="card">
+      <b>${esc(fname)}</b>
+      <p class="tiny" style="margin:6px 0 0">${R.length} transaksjoner i ${funds.length} ${funds.length===1?'fond':'fond'} · ${R.filter(r=>r.kind==='buy').length} kjøp · ${R.filter(r=>r.kind==='sell').length} salg${R.some(r=>r.kind==='div')?` · ${R.filter(r=>r.kind==='div').length} utbytte`:''}</p>
+      ${dups?`<p class="tiny muted" style="margin:4px 0 0">${dups} finnes allerede og hoppes over.</p>`:''}
+      ${parsed.skipped.length?`<p class="tiny" style="margin:4px 0 0;color:var(--warn)">${parsed.skipped.length} linjer ble ikke forstått og hoppes over: ${esc(parsed.skipped.slice(0,3).join('; '))}${parsed.skipped.length>3?' …':''}</p>`:''}
+    </div>
+    <div class="card"><div class="tiny muted" style="font-weight:650;margin-bottom:6px">Fond</div>
+      ${funds.map(r=>`<div class="spread tiny" style="padding:3px 0"><span>${esc(r.name)}</span><span class="muted">${existingSec(r)?'finnes':'nytt'}</span></div>`).join('')}</div>
+    <div class="f"><label for="impacc">Legg på konto</label><select id="impacc">${DB.accounts.map(a=>`<option value="${a.id}" ${a.id===guess?'selected':''}>${esc(a.name)}${a.type==='ask'?' (ASK)':''}</option>`).join('')}<option value="__new" ${guess==='__new'?'selected':''}>Ny konto: KLP Fond</option></select>
+      <p class="hint">Fondskonto direkte hos KLP er en vanlig (ordinær) konto. Kjøpte du fondene via aksjesparekonto, velg den.</p></div>
+    <button class="btn solid full" id="impgo" ${fresh.length?'':'disabled'}>${fresh.length?`Importer ${fresh.length} transaksjoner`:'Ingenting nytt å importere'}</button>`;
+  const go=sh.querySelector('#impgo'); if(!fresh.length) return;
+  go.onclick=()=>{
+    let accId=sh.querySelector('#impacc').value;
+    if(accId==='__new'){ const a={id:uid(),name:'KLP Fond',type:'ord'}; DB.accounts.push(a); accId=a.id; }
+    const secFor=r=>{ let s=existingSec(r);
+      if(!s){ s={id:uid(),name:r.name,kind:'fond',ticker:r.isin,cur:'NOK',divCur:'',sector:fundSector(r.name),price:'',priceAt:'',priceSrc:''}; DB.secs.push(s); }
+      return s; };
+    let n=0; const base=Date.now();
+    fresh.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{ const s=secFor(r);
+      const t={id:uid(),created:base+n++,type:r.kind,date:r.date,secId:s.id,accId,cur:'NOK',fx:'',fee:'',note:r.nav&&r.nav!==r.date?`NAV-dato ${isoToDMY(r.nav)}`:'',imported:true};
+      if(r.kind==='div'){ t.qty='1'; t.perShare=String(r.amount||r.units*r.price); } else { t.qty=String(r.units); t.price=String(r.price); }
+      DB.tx.push(t);
+      /* a starting price so value isn't blank before the first fetch */
+      if(!(num(s.price)>0)||(s.priceSrc==='import'&&s.priceAt.slice(0,10)<=r.date)){ s.price=r.price; s.priceAt=r.date+'T12:00:00'; s.priceSrc='import'; }
+    });
+    save(); closeSheet(); render();
+    toast(`${n} transaksjoner importert`);
+    if(dataReady()) setTimeout(()=>refreshAll(true),300);
+  };
+}
+
 /* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
    Prices are the latest end-of-day close. Dividends come with ex-date, pay date
    and currency, so 2020 Bulkers' USD dividends land in USD. The free plan is
@@ -794,7 +895,7 @@ function group(C, keyFn){
 function viewHome(C){
   if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner ennå</h3>
     <p>Legg inn det du har kjøpt og solgt, med dato og kurs. Appen regner ut gevinst, tap og utbytte over tid.</p>
-    <button class="btn solid" data-act="newtx">Legg inn første kjøp</button>
+    <div class="row" style="justify-content:center;flex-wrap:wrap"><button class="btn solid" data-act="newtx">Legg inn første kjøp</button><button class="btn" data-act="import">Importer fra fil</button></div>
     <p class="note" style="margin-top:16px">Vil du se hvordan det ser ut først? <button class="tiny" style="color:var(--acc);font-weight:650" data-act="examples">Legg inn eksempeldata</button></p></div>`;
   const t=totals(C);
   const yrs={}; C.realized.forEach(r=>{ const y=r.date.slice(0,4), a=acc(r.accId); yrs[y]=yrs[y]||{r:0,ra:0,d:0,da:0}; yrs[y][a&&a.type==='ask'?'ra':'r']+=r.gain; });
@@ -1036,7 +1137,7 @@ function txSheet(id, preset){
       catch(e){ return bad('#tfx',`Mangler valutakurs for ${cur}`); }
     }
     if(type==='sell'){ const held=qtyHeld(d.secId,d.accId,addDays(d.date,1))+(id&&t.type==='sell'&&t.secId===d.secId&&t.accId===d.accId&&t.date<=d.date?num(t.qty):0);
-      if(num(d.qty)>held+1e-9) return bad('#tqty',`Du eier bare ${qf(held)} på denne kontoen da`); }
+      if(num(d.qty)>held+1e-4) return bad('#tqty',`Du eier bare ${qf(held)} på denne kontoen da`); }
     if(type!=='div'){ delete d.perShare; delete d.tax; delete d.exDate; }
     if(id) Object.assign(t,d); else DB.tx.push({id:uid(),created:Date.now(),...d});
     DB.lastSec=d.secId; DB.lastAcc=d.accId;
@@ -1133,13 +1234,14 @@ function menuSheet(){
     <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="src">Datakilder og nøkler</button>
     <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer og fond (${DB.secs.length})</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="import">Importer fra fil (KLP m.fl.)</button>
     <button class="btn full" style="margin-bottom:8px" data-m="backup">Last ned backup</button>
     <label class="btn full" style="margin-bottom:8px">Gjenopprett fra fil<input type="file" id="imp" accept=".json,application/json" hidden></label>
     <button class="btn full" style="margin-bottom:8px" data-m="csv">Eksporter transaksjoner (CSV)</button>
     ${!DB.tx.length?'<button class="btn full" style="margin-bottom:8px" data-m="ex">Legg inn eksempeldata</button>':''}
     <button class="btn danger full" data-m="wipe">Slett alt</button>`);
   const m=k=>sh.querySelector(`[data-m="${k}"]`);
-  m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet;
+  m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet; m('import').onclick=importSheet;
   m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer og fond</h3><p class="sub">Trykk for å endre navn, ticker/ISIN, valuta eller sektor.</p>
       ${DB.secs.map(s=>`<button class="item" data-id="${s.id}"><div class="b"><b>${esc(s.name)}</b><span>${esc(s.ticker||'uten ticker')} · ${s.cur}${s.divCur&&s.divCur!==s.cur?' · utbytte i '+s.divCur:''}${s.sector?' · '+esc(s.sector):''}</span></div></button>`).join('')}
       <button class="btn ghost full" id="snew">+ Ny aksje eller fond</button>`);
@@ -1194,6 +1296,7 @@ document.addEventListener('click',e=>{
   else if(a==='menu') menuSheet();
   else if(a==='newtx') txSheet(null,{type:'buy'});
   else if(a==='examples') addExamples();
+  else if(a==='import') importSheet();
   else if(a==='opentx') txSheet(b.dataset.id);
   else if(a==='opensec') secSheet(b.dataset.id);
   else if(a==='txf'){ txFilter=b.dataset.k; render(); }
