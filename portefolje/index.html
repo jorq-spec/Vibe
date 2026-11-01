@@ -641,20 +641,53 @@ function txLine(t){
   if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))}${isFund(s)?' andeler':''} × ${nf(num(t.price),isFund(s)?4:2).replace(/(,\d\d)0+$/,'$1')} ${cur}`;
   else if(t.type==='div') what=`${qf(num(t.qty))} × ${nf(num(t.perShare),4).replace(/,?0+$/,'')} ${cur}`;
   else what=`forhold ${t.ratio}`;
-  const amt=t.type==='buy'?-(num(t.qty)*num(t.price)*(txFx(t)||1)+(num(t.fee)||0))
-    :t.type==='sell'?num(t.qty)*num(t.price)*(txFx(t)||1)-(num(t.fee)||0)
-    :t.type==='div'?num(t.qty)*num(t.perShare)*(txFx(t)||1)-(num(t.tax)||0):null;
+  const amt=t.type==='split'?null:txAmount(t);
   return `<button class="item" data-act="opentx" data-id="${t.id}">
     <div class="b"><b>${esc(TYPES[t.type])} · ${esc(s?.name||'?')}</b><span>${esc(prettyDate(t.date))} · ${esc(what)}${DB.accounts.length>1&&a?` · ${esc(a.name)}`:''}</span></div>
     <div class="r">${amt!=null?`<b class="num ${t.type==='buy'?'':'up'}">${sgn(amt)}</b><span class="tiny muted">kr</span>`:''}</div></button>`;
 }
-function viewTx(){
-  if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner</h3><p>Trykk «Ny transaksjon» for å legge inn et kjøp.</p></div>`;
-  const list=DB.tx.filter(t=>txFilter==='all'||t.type===txFilter).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+/* Live search: only the list below the search field is redrawn, so the
+   keyboard stays up while typing. Every word must match somewhere. */
+let txQuery='';
+const fold=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+function txAmount(t){
+  return t.type==='buy'?-(num(t.qty)*num(t.price)*(txFx(t)||1)+(num(t.fee)||0))
+    :t.type==='sell'?num(t.qty)*num(t.price)*(txFx(t)||1)-(num(t.fee)||0)
+    :t.type==='div'?num(t.qty)*num(t.perShare)*(txFx(t)||1)-(num(t.tax)||0):0;
+}
+function txHay(t){
+  const s=sec(t.secId)||{}, a=acc(t.accId)||{}, amt=txAmount(t);
+  return fold([TYPES[t.type], s.name, s.ticker, s.sector, isFund(s)?'fond':'aksje', a.name, a.type==='ask'?'ask aksjesparekonto':'',
+    t.note, t.cur||s.cur, t.date, isoToDMY(t.date), prettyDate(t.date), MON[parseYmd(t.date).getMonth()],
+    t.qty, t.price, t.perShare, Math.round(Math.abs(amt)), nf(Math.abs(amt)), t.auto?'automatisk':''].join(' '));
+}
+function txListHtml(){
+  const words=fold(txQuery).split(/\s+/).filter(Boolean);
+  const list=DB.tx.filter(t=>(txFilter==='all'||t.type===txFilter)&&(!words.length||(h=>words.every(w=>h.includes(w)))(txHay(t))))
+    .sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+  if(!list.length) return `<p class="muted tiny" style="margin:10px 2px">${words.length?'Ingen treff.':'Ingen i denne kategorien.'}</p>`;
   let lastY='', out='';
   for(const t of list){ const y=t.date.slice(0,4); if(y!==lastY){ out+=`<h2 class="sec">${y}</h2>`; lastY=y; } out+=txLine(t); }
-  return `<div class="chips">${[['all','Alle'],['buy','Kjøp'],['sell','Salg'],['div','Utbytte'],['split','Splitt']].map(([k,l])=>`<button class="chip" data-act="txf" data-k="${k}" aria-pressed="${txFilter===k}">${l}</button>`).join('')}</div>${out||'<p class="muted tiny">Ingen i denne kategorien.</p>'}`;
+  const head=(words.length||txFilter!=='all')?(()=>{ const by={}; list.forEach(t=>{ by[t.type]=(by[t.type]||0)+txAmount(t); });
+    const parts=[['buy','kjøpt for'],['sell','solgt for'],['div','utbytte']].filter(([k])=>by[k]).map(([k,l])=>`${l} ${kr(Math.abs(by[k]))}`);
+    return `<p class="tiny muted" style="margin:2px 2px 0">${list.length} ${list.length===1?'treff':'treff'}${parts.length?' · '+parts.join(' · '):''}</p>`; })():'';
+  return head+out;
 }
+function viewTx(){
+  if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner</h3><p>Trykk «Ny transaksjon» for å legge inn et kjøp.</p></div>`;
+  return `<div class="f" style="margin-bottom:8px;position:relative"><input type="text" inputmode="search" id="txq" value="${esc(txQuery)}" placeholder="Søk: aksje, fond, konto, år, måned, beløp…" autocomplete="off" enterkeyhint="search" style="padding-right:40px">
+      ${txQuery?'<button id="txqx" aria-label="Tøm søk" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;color:var(--muted);font-size:18px">×</button>':''}</div>
+    <div class="chips">${[['all','Alle'],['buy','Kjøp'],['sell','Salg'],['div','Utbytte'],['split','Splitt']].map(([k,l])=>`<button class="chip" data-act="txf" data-k="${k}" aria-pressed="${txFilter===k}">${l}</button>`).join('')}</div>
+    <div id="txlist">${txListHtml()}</div>`;
+}
+document.addEventListener('input',e=>{
+  if(e.target.id!=='txq') return;
+  txQuery=e.target.value; const L=$('#txlist'); if(L) L.innerHTML=txListHtml();
+  const wrap=e.target.parentElement; let x=wrap.querySelector('#txqx');
+  if(txQuery&&!x){ x=el('<button id="txqx" aria-label="Tøm søk" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;color:var(--muted);font-size:18px">×</button>'); wrap.appendChild(x); }
+  if(!txQuery&&x) x.remove();
+});
+document.addEventListener('click',e=>{ if(e.target.id!=='txqx') return; txQuery=''; const i=$('#txq'); if(i){ i.value=''; i.focus(); } $('#txlist').innerHTML=txListHtml(); e.target.remove(); });
 function viewDiv(C){
   const pend=pendingDivs(C);
   const byY={}; C.divs.forEach(d=>{ const y=d.date.slice(0,4); byY[y]=(byY[y]||0)+d.net; });
