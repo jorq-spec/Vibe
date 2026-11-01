@@ -197,6 +197,8 @@ const qf=n=>nf(n, Math.abs(n%1)>1e-9?4:0).replace(/,?0+$/,m=>m.startsWith(',')?'
 const MON=['jan','feb','mar','apr','mai','jun','jul','aug','sep','okt','nov','des'];
 const prettyDate=k=>{ if(!k) return ''; const d=parseYmd(k); return `${d.getDate()}. ${MON[d.getMonth()]} ${d.getFullYear()}`; };
 const sec=id=>DB.secs.find(s=>s.id===id);
+const isFund=s=>!!s&&s.kind==='fond';
+
 const acc=id=>DB.accounts.find(a=>a.id===id);
 const ICON={
   home:'<svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
@@ -425,7 +427,7 @@ async function refreshAll(manual=true){
     let ok=0, fail=[];
     for(const s of list){ const r=await refreshSec(s); if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push(s.name); await sleep(PROVIDER_GAP_MS); }
     DB.lastRefresh=new Date().toISOString(); save();
-    if(manual) toast(fail.length?`Oppdatert ${ok} – fikk ikke hentet ${fail.join(', ')}`:`Oppdatert ${ok} ${ok===1?'aksje':'aksjer'}`);
+    if(manual) toast(fail.length?`Oppdatert ${ok} – fikk ikke hentet ${fail.join(', ')}`:`Kurser oppdatert for ${ok} ${ok===1?'post':'poster'}`);
   } finally { refreshing=false; render(); }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -448,6 +450,7 @@ function dataReady(){ return !!DB.settings.apiKey; }
 /* EQNR + NOK → EQNR.OL, MSFT + USD → MSFT.US. A ticker with a dot is used as written. */
 function eodSymbol(s){
   const t=String(s.ticker||'').trim().toUpperCase(); if(!t) return '';
+  if(s.kind==='fond') return /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(t)?`${t}.EUFUND`:t;
   if(t.includes('.')) return t;
   const ex={NOK:'OL',USD:'US',SEK:'ST',DKK:'CO',EUR:'',GBP:'LSE'}[s.cur];
   return ex?`${t}.${ex}`:t;
@@ -551,7 +554,7 @@ function render(){
   const C=compute();
   const T=$('#top'), A=$('#app');
   if(view==='home'){ T.innerHTML=topbar('Portefølje', lastUpdateText()); A.innerHTML=viewHome(C); }
-  else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} aksjer`); A.innerHTML=viewHold(C); }
+  else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}`); A.innerHTML=viewHold(C); }
   else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.length} totalt`); A.innerHTML=viewTx(C); }
   else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'); A.innerHTML=viewDiv(C); }
   const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:view==='div'?'div':'buy'});
@@ -605,6 +608,7 @@ function viewHome(C){
     </div>
     ${Object.keys(C.pos).length?`<h2 class="sec">Fordeling</h2>
     <div class="card"><div class="tiny muted" style="font-weight:650">Per aksje</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8))}</div>
+    ${DB.secs.some(isFund)?`<div class="card"><div class="tiny muted" style="font-weight:650">Aksjer og fond</div>${allocHtml(group(C,p=>isFund(sec(p.secId))?'Fond':'Enkeltaksjer'))}</div>`:''}
     <div class="two"><div class="card"><div class="tiny muted" style="font-weight:650">Valuta</div>${allocHtml(group(C,p=>sec(p.secId)?.cur))}</div>
       <div class="card"><div class="tiny muted" style="font-weight:650">Sektor</div>${allocHtml(group(C,p=>sec(p.secId)?.sector))}</div></div>`:''}
     ${ys.length?`<h2 class="sec">Per år</h2><div class="card"><table class="t"><thead><tr><th>År</th><th>Realisert</th><th>Utbytte</th>${hasAsk?'<th>ASK</th>':''}</tr></thead><tbody>
@@ -625,7 +629,7 @@ function viewHold(C){
   if(!P.length&&!closed.length) return `<div class="empty"><h3>Ingenting her ennå</h3><p>Aksjene dukker opp når du legger inn et kjøp.</p></div>`;
   const row=(s,p)=>{ const d12=divLast12(C,s.id);
     return `<button class="item" data-act="opensec" data-id="${s.id}">
-      <div class="b"><b>${esc(s.name)}</b><span>${p?`${qf(p.qty)} stk · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
+      <div class="b"><b>${esc(s.name)}</b><span>${isFund(s)?'<span class="tag">Fond</span> ':''}${p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'} · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
       <div class="r">${p?`<b class="num">${kr(p.value??p.cost)}</b><span class="num ${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):'mangler kurs'}</span>`:`<span class="num ${cls(realOf(C,s.id))}">${sgn(realOf(C,s.id))} kr</span>`}${d12?`<span class="tiny muted num">utb. ${nf(d12)} kr/år</span>`:''}</div></button>`; };
   return P.map(p=>row(sec(p.secId),p)).join('')+(closed.length?`<h2 class="sec">Tidligere eid</h2>${closed.map(s=>row(s,null)).join('')}`:'');
 }
@@ -634,7 +638,7 @@ function divLast12(C,id){ const from=addDays(today(),-365); return C.divs.filter
 function txLine(t){
   const s=sec(t.secId), a=acc(t.accId), cur=t.cur||s?.cur||'NOK';
   let what='';
-  if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))} × ${nf(num(t.price),2)} ${cur}`;
+  if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))}${isFund(s)?' andeler':''} × ${nf(num(t.price),isFund(s)?4:2).replace(/(,\d\d)0+$/,'$1')} ${cur}`;
   else if(t.type==='div') what=`${qf(num(t.qty))} × ${nf(num(t.perShare),4).replace(/,?0+$/,'')} ${cur}`;
   else what=`forhold ${t.ratio}`;
   const amt=t.type==='buy'?-(num(t.qty)*num(t.price)*(txFx(t)||1)+(num(t.fee)||0))
@@ -700,12 +704,14 @@ function txSheet(id, preset){
   let type=t.type;
   const sh=openSheet(`<h3>${id?'Endre transaksjon':'Ny transaksjon'}</h3><p class="sub">Beløp i aksjens valuta. Kurtasje og kildeskatt i kroner.</p>
     <div class="seg" id="ttype">${Object.entries(TYPES).map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${k===type}">${l}</button>`).join('')}</div>
-    <div class="f"><label for="tsec">Aksje</label><div class="row"><select id="tsec" style="flex:1"><option value="">Velg…</option>${secOptions(t.secId)}</select>
+    <div class="f"><label for="tsec">Aksje eller fond</label><div class="row"><select id="tsec" style="flex:1"><option value="">Velg…</option>${secOptions(t.secId)}</select>
       <button type="button" class="btn sm" id="tnewsec">+ Ny</button></div></div>
     <div class="two"><div class="f"><label for="tdate" id="ldate">Dato</label><input id="tdate" value="${esc(isoToDMY(t.date))}" placeholder="DD.MM.ÅÅÅÅ" inputmode="numeric"></div>
       <div class="f"><label for="tacc">Konto</label><select id="tacc">${accOptions(t.accId)}</select></div></div>
+    <div id="wamt" class="f"><label for="tamt" id="lamt">Beløp</label><input id="tamt" inputmode="decimal" value="${t.qty&&t.price?esc(String(Math.round(num(t.qty)*num(t.price)*100)/100).replace('.',',')):''}" placeholder="f.eks. 1000">
+      <p class="hint">Fyll inn beløp og andelskurs, så regnes andelene ut. Eller skriv antall andeler fra sluttseddelen direkte.</p></div>
     <div id="wtrade" class="two">
-      <div class="f"><label for="tqty">Antall</label><input id="tqty" inputmode="decimal" value="${esc(t.qty)}"></div>
+      <div class="f"><label for="tqty" id="lqty">Antall</label><input id="tqty" inputmode="decimal" value="${esc(t.qty)}"></div>
       <div class="f"><label for="tpx" id="lpx">Kurs</label><input id="tpx" inputmode="decimal" value="${esc(t.price)}"></div></div>
     <div id="wdiv">
       <div class="two"><div class="f"><label for="tps" id="lps">Utbytte per aksje</label><input id="tps" inputmode="decimal" value="${esc(t.perShare)}"></div>
@@ -720,7 +726,7 @@ function txSheet(id, preset){
     <div class="f"><label for="tnote">Notat</label><input id="tnote" value="${esc(t.note||'')}" placeholder="Valgfritt"></div>
     <p class="hint" id="tsum" style="margin:-2px 2px 12px;font-size:14px;color:var(--muted)"></p>
     <button class="btn solid full" id="tsave">${id?'Lagre endringer':'Lagre'}</button>
-    ${id?`<button class="btn danger full" id="tdel" style="margin-top:10px">Slett transaksjon</button>`:''}`);
+    ${id?`<div class="two" style="margin-top:10px"><button class="btn full" id="tdup">Kopier som ny</button><button class="btn danger full" id="tdel">Slett</button></div>`:''}`);
   const q=s=>sh.querySelector(s);
   const curOf=()=>{ const s=sec(q('#tsec').value); return type==='div'?q('#tcur').value:(s?s.cur:'NOK'); };
   const sync=()=>{
@@ -731,7 +737,11 @@ function txSheet(id, preset){
     const cur=curOf();
     q('#wfx').style.display=(type!=='split'&&cur!=='NOK')?'':'none';
     q('#lfx').textContent=`Valutakurs (kr per ${cur})`;
-    q('#lpx').textContent=`Kurs (${cur})`; q('#lps').textContent=`Utbytte per aksje (${cur})`;
+    const fund=isFund(sec(q('#tsec').value));
+    q('#wamt').style.display=(fund&&(type==='buy'||type==='sell'))?'':'none';
+    q('#lamt').textContent=`Beløp (${cur})`;
+    q('#lqty').textContent=fund?'Andeler':'Antall';
+    q('#lpx').textContent=`${fund?'Andelskurs':'Kurs'} (${cur})`; q('#lps').textContent=`Utbytte per ${fund?'andel':'aksje'} (${cur})`;
     q('#ldate').textContent=type==='div'?'Utbetalt':'Dato';
     summary();
   };
@@ -748,7 +758,13 @@ function txSheet(id, preset){
     if(type==='div'){ const s=sec(q('#tsec').value); if(s&&!id) q('#tcur').value=s.divCur||s.cur; } sync(); });
   q('#tsec').onchange=()=>{ const s=sec(q('#tsec').value); if(s&&type==='div') q('#tcur').value=s.divCur||s.cur; q('#tfx').value=''; sync(); autoQty(); };
   q('#tcur').onchange=()=>{ q('#tfx').value=''; sync(); };
-  ['#tqty','#tpx','#tfee','#tfx','#tps','#tdq','#ttax','#tdate'].forEach(s=>q(s).oninput=summary);
+  ['#tfee','#tfx','#tps','#tdq','#ttax','#tdate'].forEach(s=>q(s).oninput=summary);
+  /* funds: amount ↔ units, whichever was typed last wins */
+  const r4=x=>String(Math.round(x*1e6)/1e6).replace('.',',');
+  q('#tamt').oninput=()=>{ const a=num(q('#tamt').value), px=num(q('#tpx').value); if(a>0&&px>0) q('#tqty').value=r4(a/px); summary(); };
+  q('#tpx').oninput=()=>{ const a=num(q('#tamt').value), px=num(q('#tpx').value);
+    if(isFund(sec(q('#tsec').value))&&a>0&&px>0&&q('#wamt').style.display!=='none') q('#tqty').value=r4(a/px); summary(); };
+  q('#tqty').oninput=()=>{ const n=num(q('#tqty').value), px=num(q('#tpx').value); if(n>0&&px>0) q('#tamt').value=String(Math.round(n*px*100)/100).replace('.',','); summary(); };
   q('#tex').onchange=autoQty; q('#tacc').onchange=()=>{ autoQty(); summary(); };
   q('#tnewsec').onclick=()=>secSheet(null, s=>{ txSheet(id, Object.assign({}, collect(true), {secId:s.id})); });
   q('#tgetfx').onclick=async()=>{ const cur=curOf(), d=dmyToIso(q('#tdate').value)||today();
@@ -781,40 +797,55 @@ function txSheet(id, preset){
     DB.lastSec=d.secId; DB.lastAcc=d.accId;
     save(); closeSheet(); render(); toast(id?'Endret':'Lagret');
   };
+  const dup=q('#tdup'); if(dup) dup.onclick=()=>{ const c={...t}; delete c.id; delete c.created; delete c.auto; c.date=today(); c.fx=''; c.exDate=''; c.note='';
+    if(isFund(sec(t.secId))&&t.type==='buy'){ c.price=''; c.qty=''; }   // monthly savings: same fund, same amount, new NAV
+    txSheet(null,c); if(isFund(sec(t.secId))&&t.type==='buy'){ const a=document.querySelector('#tamt'); if(a&&t.qty&&t.price){ a.value=String(Math.round(num(t.qty)*num(t.price)*100)/100).replace('.',','); } }
+    toast('Kopiert – sjekk dato og kurs'); };
   const del=q('#tdel'); if(del) del.onclick=()=>{ if(!confirmBox('Slette denne transaksjonen?')) return; DB.tx=DB.tx.filter(x=>x.id!==id); save(); closeSheet(); render(); toast('Slettet'); };
 }
 
-function secSheet(id, onSaved){
-  const s=id?sec(id):{name:'',ticker:'',cur:'NOK',divCur:'',sector:'',price:''};
+function secSheet(id, onSaved, secPreset){
+  const s=id?sec(id):Object.assign({name:'',ticker:'',cur:'NOK',divCur:'',sector:'',price:'',kind:'aksje'},secPreset||{});
+  let kind=s.kind||'aksje';
   const C=compute(), p=id?C.pos[id]:null;
   const txs=id?DB.tx.filter(t=>t.secId===id).sort((a,b)=>b.date.localeCompare(a.date)):[];
-  const sh=openSheet(`<h3>${id?esc(s.name):'Ny aksje'}</h3><p class="sub">${id?(p?`${qf(p.qty)} stk · snitt ${nf(p.avg,2)} kr`:'Ingen beholdning'):'Navn og ticker. Tickeren brukes til å hente kurs og utbytte.'}</p>
+  const sh=openSheet(`<h3>${id?esc(s.name):'Ny aksje eller fond'}</h3><p class="sub">${id?(p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'} · snitt ${nf(p.avg,2)} kr`:'Ingen beholdning'):'Navn og ticker/ISIN. Den brukes til å hente kurs og utbytte.'}</p>
+    <div class="seg" id="skind"><button type="button" data-k="aksje" aria-pressed="${kind!=='fond'}">Aksje</button><button type="button" data-k="fond" aria-pressed="${kind==='fond'}">Fond</button></div>
     ${p?`<div class="card"><div class="kv" style="margin-top:0">
       <div><span>Markedsverdi</span><b class="num">${kr(p.value)}</b><span>${s.price?`${nf(num(s.price),2)} ${s.cur}${s.priceAt?' · '+prettyDate(s.priceAt.slice(0,10)):''}`:'mangler kurs'}</span></div>
       <div><span>Urealisert</span><b class="num ${cls(p.unreal)}">${p.unreal!=null?sgn(p.unreal)+' kr':'–'}</b><span class="${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):''}</span></div>
       <div><span>Realisert</span><b class="num ${cls(realOf(C,id))}">${sgn(realOf(C,id))} kr</b></div>
       <div><span>Utbytte totalt</span><b class="num">${kr(C.divs.filter(d=>d.secId===id).reduce((a,d)=>a+d.net,0))}</b></div></div></div>`:''}
     <div class="two"><div class="f"><label for="sn">Navn</label><input id="sn" value="${esc(s.name)}" placeholder="f.eks. Equinor"></div>
-      <div class="f"><label for="st">Ticker</label><input id="st" value="${esc(s.ticker)}" placeholder="f.eks. EQNR" autocapitalize="characters"></div></div>
+      <div class="f"><label for="st" id="lst">Ticker</label><input id="st" value="${esc(s.ticker)}" placeholder="f.eks. EQNR" autocapitalize="characters"></div></div>
     <div class="two"><div class="f"><label for="sc">Handles i</label><select id="sc">${CURS.map(c=>`<option ${c===s.cur?'selected':''}>${c}</option>`).join('')}</select></div>
-      <div class="f"><label for="sdc">Utbytte i</label><select id="sdc"><option value="">Samme</option>${CURS.map(c=>`<option ${c===s.divCur?'selected':''}>${c}</option>`).join('')}</select></div></div>
+      <div class="f"><label for="sdc" id="lsdc">Utbytte i</label><select id="sdc"><option value="">Samme</option>${CURS.map(c=>`<option ${c===s.divCur?'selected':''}>${c}</option>`).join('')}</select></div></div>
     <div class="two"><div class="f"><label for="ssec">Sektor</label><input id="ssec" value="${esc(s.sector||'')}" placeholder="f.eks. Shipping" list="sectors"><datalist id="sectors">${[...new Set(DB.secs.map(x=>x.sector).filter(Boolean).concat(['Energi','Shipping','Finans','Sjømat','Teknologi','Industri','Eiendom','Helse','Forbruk','Råvarer','Fond']))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
       <div class="f"><label for="spx">Kurs nå (${esc(s.cur)})</label><input id="spx" inputmode="decimal" value="${esc(s.price)}" placeholder="hentes automatisk"></div></div>
-    <p class="hint" style="margin:-6px 2px 12px">Ticker som på Oslo Børs, f.eks. EQNR eller 2020. For utenlandske aksjer velger du valuta, så finner appen børsen (USD → USA), eller skriv f.eks. NOVO-B.CO. Eksempel: 2020 Bulkers handles i NOK, men betaler utbytte i USD.</p>
+    <p class="hint" id="hfund" style="margin:-6px 2px 12px">Fond identifiseres med ISIN, en kode på 12 tegn som står på fondets side hos banken eller i Morningstar, f.eks. NO0010337678. Kurs er andelskurs (NAV), og den kommer med noen dagers forsinkelse.</p>
+    <p class="hint" id="hstock" style="margin:-6px 2px 12px">Ticker som på Oslo Børs, f.eks. EQNR eller 2020. For utenlandske aksjer velger du valuta, så finner appen børsen (USD → USA), eller skriv f.eks. NOVO-B.CO. Eksempel: 2020 Bulkers handles i NOK, men betaler utbytte i USD.</p>
     <button class="btn solid full" id="ssave">${id?'Lagre':'Legg til aksje'}</button>
     ${id?`<button class="btn full" id="sfetch" style="margin-top:10px">Hent kurs og utbytte nå</button><p class="hint" id="sfh" style="margin:6px 2px 0"></p>`:''}
     ${p&&p.lots.length?`<h2 class="sec">Kjøpsposter som fortsatt eies (FIFO)</h2><div class="card"><table class="t"><thead><tr><th>Kjøpt</th><th>Antall</th><th>Kost/stk</th></tr></thead><tbody>
       ${p.lots.map(l=>`<tr><td>${esc(prettyDate(l.date))}${DB.accounts.length>1?` <span class="tiny muted">${esc(acc(l.accId)?.name||'')}</span>`:''}</td><td>${qf(l.q)}</td><td>${nf(l.cpu,2)}</td></tr>`).join('')}</tbody></table>
       <p class="note">Ved salg går de eldste først, slik Skatteetaten regner.</p></div>`:''}
     ${txs.length?`<h2 class="sec">Transaksjoner</h2>${txs.map(txLine).join('')}`:''}
-    ${id?`<button class="btn danger full" id="sdel" style="margin-top:12px">Slett aksjen${txs.length?' og alle transaksjonene':''}</button>`:''}`);
+    ${id?`<button class="btn danger full" id="sdel" style="margin-top:12px">Slett ${isFund(s)?'fondet':'aksjen'}${txs.length?' og alle transaksjonene':''}</button>`:''}`);
   const q=x=>sh.querySelector(x);
-  q('#sc').onchange=()=>{ q('label[for=spx]').textContent=`Kurs nå (${q('#sc').value})`; };
+  const pxLbl=()=>{ q('label[for=spx]').textContent=`${kind==='fond'?'Andelskurs':'Kurs'} nå (${q('#sc').value})`; };
+  const ksync=()=>{ const f=kind==='fond';
+    q('#lst').textContent=f?'ISIN':'Ticker'; q('#st').placeholder=f?'f.eks. NO0010337678':'f.eks. EQNR';
+    q('#sn').placeholder=f?'f.eks. KLP AksjeGlobal Indeks':'f.eks. Equinor';
+    q('#ssec').placeholder=f?'f.eks. Global indeks':'f.eks. Shipping';
+    q('#hfund').style.display=f?'':'none'; q('#hstock').style.display=f?'none':'';
+    q('#ssave').textContent=id?'Lagre':(f?'Legg til fond':'Legg til aksje'); pxLbl(); };
+  sh.querySelectorAll('#skind [data-k]').forEach(b=>b.onclick=()=>{ kind=b.dataset.k; sh.querySelectorAll('#skind [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); ksync(); });
+  q('#sc').onchange=pxLbl; ksync();
   if(!id) setTimeout(()=>q('#sn').focus(),120);
   sh.querySelectorAll('[data-act=opentx]').forEach(b=>b.onclick=()=>txSheet(b.dataset.id));
   q('#ssave').onclick=()=>{
     const name=q('#sn').value.trim(); if(!name){ q('#sn').classList.add('bad'); q('#sn').focus(); return toast('Skriv inn navn'); }
-    const d={name, ticker:q('#st').value.trim().toUpperCase(), cur:q('#sc').value, divCur:q('#sdc').value, sector:q('#ssec').value.trim()};
+    const d={name, kind, ticker:q('#st').value.trim().toUpperCase().replace(/\s/g,''), cur:q('#sc').value, divCur:q('#sdc').value, sector:q('#ssec').value.trim()||(kind==='fond'?'Fond':'')};
     const px=num(q('#spx').value);
     let s2;
     if(id){ const chg=String(px)!==String(num(s.price)); Object.assign(s,d); if(chg){ s.price=px>0?px:''; s.priceAt=px>0?new Date().toISOString():''; s.priceSrc='manuell'; } s2=s; }
@@ -855,7 +886,7 @@ function menuSheet(){
   const sh=openSheet(`<h3>Meny</h3><p class="sub">Alt lagres bare på denne enheten. Ta backup innimellom.</p>
     <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="src">Datakilder og nøkler</button>
-    <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer (${DB.secs.length})</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer og fond (${DB.secs.length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="backup">Last ned backup</button>
     <label class="btn full" style="margin-bottom:8px">Gjenopprett fra fil<input type="file" id="imp" accept=".json,application/json" hidden></label>
     <button class="btn full" style="margin-bottom:8px" data-m="csv">Eksporter transaksjoner (CSV)</button>
@@ -863,9 +894,9 @@ function menuSheet(){
     <button class="btn danger full" data-m="wipe">Slett alt</button>`);
   const m=k=>sh.querySelector(`[data-m="${k}"]`);
   m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet;
-  m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer</h3><p class="sub">Trykk for å endre navn, ticker, valuta eller sektor.</p>
+  m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer og fond</h3><p class="sub">Trykk for å endre navn, ticker/ISIN, valuta eller sektor.</p>
       ${DB.secs.map(s=>`<button class="item" data-id="${s.id}"><div class="b"><b>${esc(s.name)}</b><span>${esc(s.ticker||'uten ticker')} · ${s.cur}${s.divCur&&s.divCur!==s.cur?' · utbytte i '+s.divCur:''}${s.sector?' · '+esc(s.sector):''}</span></div></button>`).join('')}
-      <button class="btn ghost full" id="snew">+ Ny aksje</button>`);
+      <button class="btn ghost full" id="snew">+ Ny aksje eller fond</button>`);
     s2.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>secSheet(b.dataset.id)); s2.querySelector('#snew').onclick=()=>secSheet(null); };
   m('backup').onclick=()=>{ const blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'}); dl(blob,`portefolje-${today()}.json`); toast('Backup lastet ned'); };
   m('csv').onclick=()=>{ const rows=[['Dato','Type','Aksje','Ticker','Konto','Antall','Kurs','Valuta','Valutakurs','Kurtasje','Utbytte per aksje','Kildeskatt','Forhold','Notat']];
