@@ -249,7 +249,13 @@ const ORDER={split:0,buy:1,div:2,sell:3};
 function txCur(t){ return t.cur||sec(t.secId)?.cur||'NOK'; }
 function txFx(t){ const c=txCur(t); if(c==='NOK') return 1; const f=num(t.fx); return f>0?f:fxNow(c); }
 const fxMissing=t=>txCur(t)!=='NOK'&&!(num(t.fx)>0)&&t.type!=='split';
-function sortedTx(){ return DB.tx.slice().sort((a,b)=>a.date.localeCompare(b.date)||(ORDER[a.type]-ORDER[b.type])||(a.created||0)-(b.created||0)); }
+/* What the screens show: everything, only stocks, or only funds. Holdings checks
+   (can I sell this many?) always look at everything. */
+const kindOf=s=>isFund(s)?'fond':'aksje';
+const scope=()=>DB.settings.scope||'all';
+const bothKinds=()=>DB.secs.some(isFund)&&DB.secs.some(s=>!isFund(s));
+function inScope(secId){ const sc=scope(); if(sc==='all'||!bothKinds()) return true; const s=sec(secId); return !!s&&kindOf(s)===sc; }
+function sortedTx(all){ return DB.tx.filter(t=>all||inScope(t.secId)).sort((a,b)=>a.date.localeCompare(b.date)||(ORDER[a.type]-ORDER[b.type])||(a.created||0)-(b.created||0)); }
 function compute(){
   const lots={}, realized=[], divs=[], errors=[];
   const K=(a,s)=>a+'|'+s;
@@ -288,7 +294,7 @@ function compute(){
 /* Shares held at the close of the day before the ex-date = entitled to the dividend. */
 function qtyHeld(secId, accId, beforeDate){
   let q=0;
-  for(const t of sortedTx()){
+  for(const t of sortedTx(true)){
     if(t.secId!==secId||(accId&&t.accId!==accId)||t.date>=beforeDate) continue;
     if(t.type==='buy') q+=num(t.qty); else if(t.type==='sell') q-=num(t.qty); else if(t.type==='split') q*=num(t.ratio)||1;
   }
@@ -417,6 +423,7 @@ async function ensureFxRange(cur, start){
 function pendingDivs(C){
   const out=[];
   for(const s of DB.secs){
+    if(!inScope(s.id)) continue;
     const list=(DB.divCache[s.id]||{}).items||[];
     for(const d of list){
       if(!d.exDate||!(d.amount>0)) continue;
@@ -496,7 +503,7 @@ function lastOn(map, keys, d){ // keys sorted asc; last value with key<=d
   return ans>=0?map[keys[ans]]:undefined;
 }
 function dailySeries(){
-  const key=JSON.stringify([DB.tx.length, DB.tx.map(t=>t.id+t.date+t.qty+t.price+t.fx+t.ratio).join('').length, DB.secs.map(s=>(s.price||'')+Object.keys(s.hist||{}).length).join(','), Object.values(DB.fxHist||{}).map(h=>Object.keys(h).length).join(',')]);
+  const key=JSON.stringify([scope(), DB.tx.length, DB.tx.map(t=>t.id+t.date+t.qty+t.price+t.fx+t.ratio).join('').length, DB.secs.map(s=>(s.price||'')+Object.keys(s.hist||{}).length).join(','), Object.values(DB.fxHist||{}).map(h=>Object.keys(h).length).join(',')]);
   if(_series&&_seriesKey===key) return _series;
   const tx=sortedTx(); if(!tx.length) return (_series={days:[],hasHist:false});
   const start=tx[0].date, end=today();
@@ -858,16 +865,21 @@ function topbar(title, sub, back){
     <button class="ib" data-act="theme" aria-label="${DB.settings.theme==='dark'?'Lyst tema':'Mørkt tema'}">${DB.settings.theme==='dark'?ICON.sun:ICON.moon}</button>
     <button class="ib" data-act="menu" aria-label="Meny">${ICON.menu}</button>`;
 }
+function scopeBar(){
+  if(!bothKinds()) return '';
+  return `<div class="seg" style="margin-bottom:12px">${[['all','Alt'],['aksje','Aksjer'],['fond','Fond']].map(([k,l])=>`<button data-act="scope" data-k="${k}" aria-pressed="${scope()===k}">${l}</button>`).join('')}</div>`;
+}
 function render(){
   const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['cal','Kalender',ICON.cal],['tx','Handler',ICON.list],['div','Utbytte',ICON.coin]];
   $('#tabs').innerHTML=tabs.map(([k,l,i])=>`<button aria-selected="${view===k}" data-tab="${k}">${i}<span>${l}</span></button>`).join('');
   const C=compute();
   const T=$('#top'), A=$('#app');
-  if(view==='home'){ T.innerHTML=topbar('Portefølje', lastUpdateText()); A.innerHTML=viewHome(C); }
-  else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}`); A.innerHTML=viewHold(C); }
-  else if(view==='cal'){ T.innerHTML=topbar('Kalender','Endring per dag'); A.innerHTML=viewCal(); }
-  else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.length} totalt`); A.innerHTML=viewTx(C); }
-  else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'); A.innerHTML=viewDiv(C); }
+  const SC={all:'',aksje:' · aksjer',fond:' · fond'}[bothKinds()?scope():'all'];
+  if(view==='home'){ T.innerHTML=topbar(scope()==='fond'&&bothKinds()?'Fond':scope()==='aksje'&&bothKinds()?'Aksjer':'Portefølje', lastUpdateText()); A.innerHTML=scopeBar()+viewHome(C); }
+  else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}${SC}`); A.innerHTML=scopeBar()+viewHold(C); }
+  else if(view==='cal'){ T.innerHTML=topbar('Kalender','Endring per dag'+SC); A.innerHTML=scopeBar()+viewCal(); }
+  else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.filter(t=>inScope(t.secId)).length} totalt${SC}`); A.innerHTML=scopeBar()+viewTx(C); }
+  else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'+SC); A.innerHTML=scopeBar()+viewDiv(C); }
   const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:view==='div'?'div':'buy'});
   $('#fabLbl').textContent=view==='div'?'Nytt utbytte':'Ny transaksjon';
 }
@@ -919,8 +931,8 @@ function viewHome(C){
     </div>
     ${valueChart()}
     ${Object.keys(C.pos).length?`<h2 class="sec">Fordeling</h2>
-    <div class="card"><div class="tiny muted" style="font-weight:650">Per aksje</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8))}</div>
-    ${DB.secs.some(isFund)?`<div class="card"><div class="tiny muted" style="font-weight:650">Aksjer og fond</div>${allocHtml(group(C,p=>isFund(sec(p.secId))?'Fond':'Enkeltaksjer'))}</div>`:''}
+    <div class="card"><div class="tiny muted" style="font-weight:650">${scope()==="fond"&&bothKinds()?"Per fond":bothKinds()&&scope()==="all"?"Per aksje og fond":"Per aksje"}</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8))}</div>
+    ${scope()==='all'&&bothKinds()?splitCard(C):''}
     <div class="two"><div class="card"><div class="tiny muted" style="font-weight:650">Valuta</div>${allocHtml(group(C,p=>sec(p.secId)?.cur))}</div>
       <div class="card"><div class="tiny muted" style="font-weight:650">Sektor</div>${allocHtml(group(C,p=>sec(p.secId)?.sector))}</div></div>`:''}
     ${ys.length?`<h2 class="sec">Per år</h2><div class="card"><table class="t"><thead><tr><th>År</th><th>Realisert</th><th>Utbytte</th>${hasAsk?'<th>ASK</th>':''}</tr></thead><tbody>
@@ -930,6 +942,23 @@ function viewHome(C){
     <h2 class="sec">Analyse</h2>
     <div class="card ai" id="ai">${DB.lastAi?aiHtml(DB.lastAi):`<p class="tiny muted">Få en AI-gjennomgang av porteføljen: spredning, valuta, avhengighet av enkeltselskaper og utbytte. Tips, ikke råd.</p>`}
       <button class="btn sm" data-act="ai">${DB.lastAi?'Lag ny analyse':'Lag analyse'}</button></div>`;
+}
+/* Side by side: how the stocks and the funds are doing. */
+function splitCard(C){
+  const part=k=>{ const P=Object.values(C.pos).filter(p=>kindOf(sec(p.secId))===k);
+    const ids=new Set(DB.secs.filter(s=>kindOf(s)===k).map(s=>s.id));
+    const v=P.reduce((a,p)=>a+(p.value??p.cost),0), c=P.reduce((a,p)=>a+p.cost,0), u=P.reduce((a,p)=>a+(p.unreal||0),0);
+    const r=C.realized.filter(x=>ids.has(x.secId)).reduce((a,x)=>a+x.gain,0), d=C.divs.filter(x=>ids.has(x.secId)).reduce((a,x)=>a+x.net,0);
+    return {v,c,u,r,d,t:u+r+d}; };
+  const A=part('aksje'), F=part('fond'), tot=(A.v+F.v)||1;
+  const row=(l,a,f,fmt)=>`<tr><td>${l}</td><td class="${fmt==='g'?cls(a):''}">${fmt==='g'?sgn(a):nf(a)}</td><td class="${fmt==='g'?cls(f):''}">${fmt==='g'?sgn(f):nf(f)}</td></tr>`;
+  return `<div class="card"><div class="spread"><span class="tiny muted" style="font-weight:650">Aksjer og fond</span><span class="tiny muted">kr</span></div>
+    <div class="alloc"><i style="width:${A.v/tot*100}%;background:var(--c1)"></i><i style="width:${F.v/tot*100}%;background:var(--c2)"></i></div>
+    <table class="t"><thead><tr><th></th><th><span style="color:var(--c1)">●</span> Aksjer</th><th><span style="color:var(--c2)">●</span> Fond</th></tr></thead><tbody>
+      <tr><td>Andel</td><td>${nf(A.v/tot*100,1)} %</td><td>${nf(F.v/tot*100,1)} %</td></tr>
+      ${row('Markedsverdi',A.v,F.v)}${row('Urealisert',A.u,F.u,'g')}${row('Realisert',A.r,F.r,'g')}${row('Utbytte',A.d,F.d)}${row('Totalt',A.t,F.t,'g')}
+      <tr><td>Avkastning</td><td class="${cls(A.u)}">${pct(A.c?A.u/A.c*100:null)}</td><td class="${cls(F.u)}">${pct(F.c?F.u/F.c*100:null)}</td></tr>
+    </tbody></table><p class="note">Avkastning er urealisert gevinst målt mot det du har i dag. Trykk Aksjer eller Fond øverst for å se bare den delen.</p></div>`;
 }
 function aiHtml(a){
   return `<div class="tiny muted" style="margin-bottom:8px">${esc(prettyDate(a.date))}</div>${String(a.text).split(/\n{2,}/).map(p=>`<p>${esc(p.trim()).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}</p>`).join('')}
@@ -943,7 +972,14 @@ function viewHold(C){
     return `<button class="item" data-act="opensec" data-id="${s.id}">
       <div class="b"><b>${esc(s.name)}</b><span>${isFund(s)?'<span class="tag">Fond</span> ':''}${p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'} · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
       <div class="r">${p?`<b class="num">${kr(p.value??p.cost)}</b><span class="num ${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):'mangler kurs'}</span>`:`<span class="num ${cls(realOf(C,s.id))}">${sgn(realOf(C,s.id))} kr</span>`}${d12?`<span class="tiny muted num">utb. ${nf(d12)} kr/år</span>`:''}</div></button>`; };
-  return P.map(p=>row(sec(p.secId),p)).join('')+(closed.length?`<h2 class="sec">Tidligere eid</h2>${closed.map(s=>row(s,null)).join('')}`:'');
+  const closedS=closed.filter(s=>inScope(s.id));
+  if(scope()==='all'&&bothKinds()){
+    const grp=k=>{ const L=P.filter(p=>kindOf(sec(p.secId))===k); if(!L.length) return '';
+      const v=L.reduce((a,p)=>a+(p.value??p.cost),0), c=L.reduce((a,p)=>a+p.cost,0), u=L.reduce((a,p)=>a+(p.unreal||0),0);
+      return `<h2 class="sec spread" style="margin-top:${k==='aksje'?'4px':'22px'}"><span>${k==='fond'?'Fond':'Aksjer'}</span><span class="num">${kr(v)} · <span class="${cls(u)}">${pct(c?u/c*100:null)}</span></span></h2>${L.map(p=>row(sec(p.secId),p)).join('')}`; };
+    return grp('aksje')+grp('fond')+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
+  }
+  return P.map(p=>row(sec(p.secId),p)).join('')+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
 }
 const realOf=(C,id)=>C.realized.filter(r=>r.secId===id).reduce((s,r)=>s+r.gain,0);
 function divLast12(C,id){ const from=addDays(today(),-365); return C.divs.filter(d=>d.secId===id&&d.date>=from).reduce((s,d)=>s+d.net,0); }
@@ -975,7 +1011,7 @@ function txHay(t){
 }
 function txListHtml(){
   const words=fold(txQuery).split(/\s+/).filter(Boolean);
-  const list=DB.tx.filter(t=>(txFilter==='all'||t.type===txFilter)&&(!words.length||(h=>words.every(w=>h.includes(w)))(txHay(t))))
+  const list=DB.tx.filter(t=>inScope(t.secId)&&(txFilter==='all'||t.type===txFilter)&&(!words.length||(h=>words.every(w=>h.includes(w)))(txHay(t))))
     .sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
   if(!list.length) return `<p class="muted tiny" style="margin:10px 2px">${words.length?'Ingen treff.':'Ingen i denne kategorien.'}</p>`;
   let lastY='', out='';
@@ -1248,7 +1284,7 @@ function menuSheet(){
     s2.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>secSheet(b.dataset.id)); s2.querySelector('#snew').onclick=()=>secSheet(null); };
   m('backup').onclick=()=>{ const blob=new Blob([JSON.stringify(DB,null,1)],{type:'application/json'}); dl(blob,`portefolje-${today()}.json`); toast('Backup lastet ned'); };
   m('csv').onclick=()=>{ const rows=[['Dato','Type','Aksje','Ticker','Konto','Antall','Kurs','Valuta','Valutakurs','Kurtasje','Utbytte per aksje','Kildeskatt','Forhold','Notat']];
-    sortedTx().forEach(t=>{ const s=sec(t.secId)||{}; rows.push([t.date,TYPES[t.type],s.name,s.ticker,acc(t.accId)?.name,t.qty,t.price,t.cur||s.cur,t.fx,t.fee,t.perShare,t.tax,t.ratio,t.note]); });
+    sortedTx(true).forEach(t=>{ const s=sec(t.secId)||{}; rows.push([t.date,TYPES[t.type],s.name,s.ticker,acc(t.accId)?.name,t.qty,t.price,t.cur||s.cur,t.fx,t.fee,t.perShare,t.tax,t.ratio,t.note]); });
     const csv='﻿'+rows.map(r=>r.map(v=>{ const x=String(v??''); return /[;"\n]/.test(x)?`"${x.replace(/"/g,'""')}"`:x; }).join(';')).join('\n');
     dl(new Blob([csv],{type:'text/csv'}),`transaksjoner-${today()}.csv`); };
   sh.querySelector('#imp').onchange=e=>{ const f=e.target.files[0]; if(!f) return;
@@ -1301,6 +1337,7 @@ document.addEventListener('click',e=>{
   else if(a==='opensec') secSheet(b.dataset.id);
   else if(a==='txf'){ txFilter=b.dataset.k; render(); }
   else if(a==='refresh') refreshAll();
+  else if(a==='scope'){ DB.settings.scope=b.dataset.k; save(); render(); }
   else if(a==='range'){ chartRange=b.dataset.k; render(); }
   else if(a==='calm'){ calM.m+=+b.dataset.d; if(calM.m<0){calM.m=11;calM.y--;} if(calM.m>11){calM.m=0;calM.y++;} render(); }
   else if(a==='calday') calDaySheet(b.dataset.k);
