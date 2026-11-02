@@ -303,22 +303,46 @@ function compute(){
   const cash=cashOn()?cashReplay(sortedTx(true)):null;
   return {pos, realized, divs, errors, cash};
 }
-/* Cash per account. Sales and dividends stay on the account as cash (unless the
-   account pays out to the bank), and buys use that cash first — only the part
-   the cash doesn't cover counts as new money put in. That keeps "net deposited"
-   honest when you sell and later buy again. */
-const cashOn=()=>scope()==='all'||!bothKinds();
+/* Cash per account, kept in pockets: money from selling stocks sits in the
+   stock pocket, from funds in the fund pocket, and plain deposits in a free
+   pocket. A buy spends its own pocket first, then free money, then the other
+   pocket (seen from that side, a transfer out). Only what no pocket covers is
+   new money put in. Withdrawals take free money first, then from the pockets
+   in proportion. "Alt" adds everything up; Aksjer/Fond see their own pocket. */
+const cashOn=()=>true;
 const keepsCash=accId=>(acc(accId)||{}).cash!=='out';
+const KINDS=['aksje','fond'];
+function newCashState(){ return {acc:{}, dep:{free:0,aksje:0,fond:0}}; }
+function pockets(st,a){ return st.acc[a]=st.acc[a]||{free:0,aksje:0,fond:0}; }
 function cashStep(st,t){
-  const a=t.accId; st.bal[a]=st.bal[a]||0; const keep=keepsCash(a);
-  if(t.type==='buy'){ const c=-txAmount(t); if(keep){ const use=Math.max(0,Math.min(st.bal[a],c)); st.bal[a]-=use; st.dep+=c-use; } else st.dep+=c; }
-  else if(t.type==='sell'||t.type==='div'){ const p=txAmount(t); if(keep) st.bal[a]+=p; else st.dep-=p; }
-  else if(t.type==='dep'){ const v=num(t.amount)||0; st.bal[a]+=v; st.dep+=v; }
-  else if(t.type==='wd'){ const v=num(t.amount)||0; st.bal[a]-=v; st.dep-=v; }
+  const a=t.accId, P=pockets(st,a), keep=keepsCash(a), D=st.dep;
+  const k=t.secId?kindOf(sec(t.secId)||{}):null;
+  if(t.type==='buy'){ let c=-txAmount(t); if(!keep){ D[k]+=c; return; }
+    const o=k==='aksje'?'fond':'aksje';
+    let x=Math.max(0,Math.min(P[k],c)); P[k]-=x; c-=x;
+    x=Math.max(0,Math.min(P.free,c)); P.free-=x; D.free-=x; D[k]+=x; c-=x;
+    x=Math.max(0,Math.min(P[o],c)); P[o]-=x; D[o]-=x; D[k]+=x; c-=x;
+    D[k]+=c; }
+  else if(t.type==='sell'||t.type==='div'){ const p=txAmount(t); if(keep) P[k]+=p; else D[k]-=p; }
+  else if(t.type==='dep'){ const v=num(t.amount)||0; P.free+=v; D.free+=v; }
+  else if(t.type==='wd'){ let v=num(t.amount)||0;
+    const x=Math.max(0,Math.min(P.free,v)); P.free-=x; D.free-=x; v-=x;
+    const avail=Math.max(0,P.aksje)+Math.max(0,P.fond);
+    if(v>0&&avail>0){ const take=Math.min(v,avail);
+      KINDS.forEach(q=>{ const part=take*Math.max(0,P[q])/avail; P[q]-=part; D[q]-=part; }); v-=take; }
+    if(v>0){ P.free-=v; D.free-=v; } }
 }
-function cashReplay(txs){ const st={bal:{},dep:0}; cashSort(txs).forEach(t=>cashStep(st,t));
-  Object.keys(st.bal).forEach(k=>{ if(Math.abs(st.bal[k])<0.005) st.bal[k]=0; });
-  return {byAcc:st.bal, total:Object.values(st.bal).reduce((a,b)=>a+b,0), deposited:st.dep}; }
+/* what the current view sees of a cash state */
+function cashView(st){
+  const sc=bothKinds()?scope():'all';
+  const pick=P=>sc==='all'?P.free+P.aksje+P.fond:P[sc];
+  const byAcc={}; Object.entries(st.acc).forEach(([a,P])=>{ const v=pick(P); byAcc[a]=Math.abs(v)<0.005?0:v; });
+  const deposited=sc==='all'?st.dep.free+st.dep.aksje+st.dep.fond:st.dep[sc];
+  return {byAcc, total:Object.values(byAcc).reduce((x,y)=>x+y,0), deposited};
+}
+function cashReplay(txs){ const st=newCashState(); cashSort(txs).forEach(t=>cashStep(st,t)); return cashView(st); }
+/* the whole account, whatever view is chosen — for the account sheet and adjustments */
+function cashAll(){ const st=newCashState(); cashSort(sortedTx(true)).forEach(t=>cashStep(st,t)); const o={}; Object.entries(st.acc).forEach(([a,P])=>o[a]=P.free+P.aksje+P.fond); return o; }
 /* Shares held at the close of the day before the ex-date = entitled to the dividend. */
 function qtyHeld(secId, accId, beforeDate){
   let q=0;
@@ -551,19 +575,23 @@ function lastOn(map, keys, d){ // keys sorted asc; last value with key<=d
 function dailySeries(){
   const key=JSON.stringify([scope(), DB.accounts.map(a=>a.cash||'').join(), DB.tx.map(t=>t.amount||'').join(), DB.tx.length, DB.tx.map(t=>t.id+t.date+t.qty+t.price+t.fx+t.ratio).join('').length, DB.secs.map(s=>(s.price||'')+Object.keys(s.hist||{}).length).join(','), Object.values(DB.fxHist||{}).map(h=>Object.keys(h).length).join(',')]);
   if(_series&&_seriesKey===key) return _series;
-  const tx=sortedTx(); if(!tx.length) return (_series={days:[],hasHist:false});
-  const start=tx[0].date, end=today();
+  const tx=sortedTx(true); if(!tx.some(t=>inScope(t.secId))) return (_series={days:[],hasHist:false});
+  const start=(tx.find(t=>inScope(t.secId))||tx[0]).date, end=today();
   const hk={}; DB.secs.forEach(s=>{ hk[s.id]=Object.keys(s.hist||{}).sort(); });
   const fxk={}; Object.entries(DB.fxHist||{}).forEach(([c,h])=>{ fxk[c]=Object.keys(h).sort(); });
   const hasHist=DB.secs.some(s=>hk[s.id].length>1);
   const qty={}, lastTradePx={};
-  const withCash=cashOn(); const cst={bal:{},dep:0};
-  let i=0, invested=0, prev=null; const days=[];
+  let i0=0; const withCash=true; const cst=newCashState();
+  /* cash comes from every transaction (a fund buy can spend stock money), so replay
+     whatever happened before the view's first day as well */
+  while(i0<tx.length&&tx[i0].date<start) i0++;
+  cashSort(tx.slice(0,i0)).forEach(t=>cashStep(cst,t));
+  let i=i0, invested=0, prev=null; const days=[];
   for(let d=start; d<=end; d=addDays(d,1)){
     let flow=0, div=0; const events=[];
     const today_=[]; while(i<tx.length&&tx[i].date===d) today_.push(tx[i++]);
     if(withCash) cashSort(today_).forEach(t=>cashStep(cst,t));
-    for(const t of today_){ events.push(t);
+    for(const t of today_){ if(!inScope(t.secId)) continue; events.push(t);
       if(isCashTx(t)) continue;
       if(t.type==='buy'){ qty[t.secId]=(qty[t.secId]||0)+num(t.qty); const c=-txAmount(t); flow+=c; invested+=c; lastTradePx[t.secId]=num(t.price); }
       else if(t.type==='sell'){ qty[t.secId]=(qty[t.secId]||0)-num(t.qty); const p=txAmount(t); flow-=p; invested-=p; lastTradePx[t.secId]=num(t.price); }
@@ -578,7 +606,7 @@ function dailySeries(){
       let fx=1; if(s.cur!=='NOK'){ const H=(DB.fxHist||{})[s.cur]; fx=(H&&fxk[s.cur]?lastOn(H,fxk[s.cur],d):undefined)||fxNow(s.cur)||1; }
       value+=q*(px||0)*fx; }
     let cash=0;
-    if(withCash){ cash=Object.values(cst.bal).reduce((a,b)=>a+b,0); value+=cash; flow=cst.dep-(prev?prev.invested:0); invested=cst.dep; }
+    if(withCash){ const V=cashView(cst); cash=V.total; value+=cash; flow=V.deposited-(prev?prev.invested:0); invested=V.deposited; }
     /* with cash tracked, dividends land in value; take them out so a day's figure is price movement */
     const gain=prev?value-prev.value-flow-(withCash?div:0):0;
     days.push({d, value, invested, flow, div, gain, events, priced, cash});
@@ -1434,12 +1462,12 @@ function secSheet(id, onSaved, secPreset){
 }
 
 function accountsSheet(){
-  const C=compute();
+  const C=compute(), CA=cashAll();
   const sh=openSheet(`<h3>Kontoer</h3><p class="sub">Aksjesparekonto (ASK) holdes for seg, fordi gevinst og utbytte der ikke skattlegges før du tar ut penger.</p>
     ${DB.accounts.map((a,i)=>`<div class="card" style="padding:10px 12px"><div class="row"><div style="flex:1"><b>${esc(a.name)}</b> ${a.type==='ask'?'<span class="tag ask">ASK</span>':'<span class="tag">Ordinær</span>'}
-        ${C.cash&&Math.abs(C.cash.byAcc[a.id]||0)>=1?`<div class="tiny muted">Kontanter ${kr(C.cash.byAcc[a.id])}</div>`:''}</div>
+        ${Math.abs(CA[a.id]||0)>=1?`<div class="tiny muted">Kontanter ${kr(CA[a.id])}</div>`:''}</div>
       <button class="btn sm" data-ren="${i}">Endre</button>${DB.accounts.length>1?`<button class="btn sm danger" data-del="${i}">✕</button>`:''}</div>
-      ${a.cash!=='out'&&C.cash?`<button class="btn sm full" style="margin-top:8px" data-setcash="${a.id}">Kontanter: ${kr(C.cash.byAcc[a.id]||0)} – sett riktig beløp</button>`:''}
+      ${a.cash!=='out'?`<button class="btn sm full" style="margin-top:8px" data-setcash="${a.id}">Kontanter: ${kr(CA[a.id]||0)} – sett riktig beløp</button>`:''}
       <div class="seg" style="margin:10px 0 0" data-cashacc="${a.id}"><button type="button" data-k="keep" aria-pressed="${a.cash!=='out'}">Salg blir kontanter</button><button type="button" data-k="out" aria-pressed="${a.cash==='out'}">Utbetales til bank</button></div></div>`).join('')}
     <p class="note" style="margin:-2px 2px 12px">«Salg blir kontanter»: penger fra salg og utbytte står på kontoen og brukes først ved neste kjøp, slik at grafen ikke ser dem som nye innskudd. Velg «Utbetales til bank» der pengene går ut av kontoen, f.eks. fond hos KLP.</p>
     <div class="card"><div class="f"><label for="an">Ny konto</label><input id="an" placeholder="f.eks. ASK hos Nordnet"></div>
@@ -1462,7 +1490,7 @@ function accountsSheet(){
 /* Tell the app what's actually on the account; the gap is booked as a deposit or a
    withdrawal today, so history stays intact and the total matches the bank. */
 function cashAdjustSheet(accId){
-  const a=acc(accId); if(!a) return; const now=compute().cash?.byAcc[accId]||0;
+  const a=acc(accId); if(!a) return; const now=cashAll()[accId]||0;
   const sh=openSheet(`<h3>Kontanter på ${esc(a.name)}</h3><p class="sub">Appen regner med ${kr(now,2)}. Skriv inn det som faktisk står på kontoen i dag, så føres forskjellen som et uttak eller innskudd.</p>
     <div class="f"><label for="cashv">Kontanter nå (kr)</label><input id="cashv" inputmode="decimal" placeholder="f.eks. 0 eller 2 350"></div>
     <p class="hint" id="cashh" style="margin:-4px 2px 12px"></p>
