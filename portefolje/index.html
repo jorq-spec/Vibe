@@ -506,20 +506,34 @@ async function refreshAll(manual=true){
     const held=compute().pos;
     /* what you own now first, so the free daily quota goes where it matters */
     const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
-    let ok=0, fail=[];
-    let later=0;
-    for(const s of list){ if(typeof budget==='function'&&budget()<=0){ later++; continue; } const r=await refreshSec(s); if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push(s.name); await sleep(PROVIDER_GAP_MS); }
-    DB.lastRefresh=new Date().toISOString(); save();
-    if(manual) toast(`Oppdatert ${ok}`+(fail.length?` · fikk ikke hentet ${fail.slice(0,4).join(', ')}${fail.length>4?' m.fl.':''}`:'')+(later?` · ${later} hentes i morgen (dagens 20 oppslag er brukt)`:''));
+    let ok=0, fail=[], later=0; const log=[];
+    if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
+      if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
+    for(const s of list){ if(typeof budget==='function'&&budget()<=0){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
+      const r=await refreshSec(s); log.push({name:s.name,msg:r});
+      if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push({name:s.name,msg:r}); await sleep(PROVIDER_GAP_MS); }
+    DB.lastLog={at:new Date().toISOString(),rows:log};
+    /* only a refresh that actually got something counts as today's — otherwise the app tries again next time it's opened */
+    if(ok) DB.lastRefresh=new Date().toISOString();
+    save();
+    const why=fail.length?fail[0].msg.replace(/^kurs: /,''):'';
+    if(manual||(!ok&&fail.length)) toast(ok?`Oppdatert ${ok}`+(fail.length?` · ${fail.length} feilet (se Meny → Datakilder)`:'')+(later?` · ${later} hentes i morgen`:'')
+      :`Fikk ikke oppdatert: ${why}`);
   } finally { refreshing=false; render(); }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 /* Once a day on its own, when the app opens. */
 function autoRefresh(){
   const last=DB.lastRefresh||''; if(last.slice(0,10)===today()) return;
+  if(DB.lastTry&&Date.now()-DB.lastTry<10*60e3) return;   // don't hammer when it keeps failing
+  DB.lastTry=Date.now();
   if(!DB.secs.length) return;
   refreshAll(false);
 }
+
+/* An installed app on Android usually resumes instead of reloading, so check again
+   whenever it comes back to the screen. */
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoRefresh(); });
 
 /* ============================================================
    Daily value series — the basis for the neon charts and the calendar.
@@ -897,7 +911,10 @@ function sourcesSheet(){
       <p class="tiny muted" style="margin:4px 0 10px">${PROVIDER_INFO}</p>
       <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL}</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
-      ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0">${budget()} av ${DAILY_CAP} oppslag igjen i dag.</p>`:''}</div>
+      ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0">${budget()} av ${DAILY_CAP} oppslag igjen i dag.${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
+      ${DB.lastLog&&DB.lastLog.rows?`<details style="margin-top:8px"><summary class="tiny" style="cursor:pointer;font-weight:650">Siste henting (${esc(prettyDate(DB.lastLog.at.slice(0,10)))})</summary>
+        ${DB.lastLog.rows.map(r=>`<div class="tiny" style="padding:4px 0;border-top:1px solid var(--soft)"><b>${esc(r.name)}</b><br><span class="${/feil|avvist|ikke|fikk|fant ikke|brukt opp/i.test(r.msg)?'down':'muted'}">${esc(r.msg)}</span></div>`).join('')}</details>`:''}
+      <button class="btn sm" id="pnow" style="margin-top:8px">Oppdater nå</button></div>
     <div class="card"><b>Mellomstasjon</b>
       <p class="tiny muted" style="margin:4px 0 10px">EODHD svarer ikke en nettside direkte. En gratis Cloudflare Worker henter dataene for appen. Den tar ca. 5 minutter å sette opp og brukes bare av deg.</p>
       <div class="f" style="margin-bottom:8px"><label for="px">Adresse til mellomstasjonen</label><input id="px" value="${esc(st.proxy||'')}" placeholder="https://noe.dittnavn.workers.dev" autocomplete="off" inputmode="url"></div>
@@ -924,6 +941,7 @@ function sourcesSheet(){
     q('#pxres').innerHTML='<span class="spin"></span> Sjekker…';
     try{ const r=await fetch(st.proxy+'/'); q('#pxres').textContent=r.ok?'Mellomstasjonen svarer. Trykk «Lagre og test» over.':'Svarte '+r.status+' – sjekk at koden er limt inn og deployet.'; }
     catch(e){ q('#pxres').textContent='Fikk ikke kontakt – sjekk adressen, og at koden er deployet.'; } };
+  q('#pnow').onclick=async()=>{ closeSheet(); await refreshAll(true); };
   q('#gsave').onclick=()=>{ st.gemKey=q('#gk').value.trim(); save(); toast('Lagret'); };
   q('#ptest').onclick=async()=>{ st.apiKey=q('#pk').value.trim(); save();
     if(!st.apiKey){ q('#pres').textContent='Nøkkel fjernet'; return; }
