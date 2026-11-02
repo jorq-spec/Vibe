@@ -132,6 +132,9 @@ table.t tr:last-child td{border-bottom:0}
 .seg button{padding:10px 4px;font-size:14px;font-weight:650;color:var(--muted)}
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--acc);color:var(--on-acc)}
+.seg.seg3{grid-auto-flow:row;grid-template-columns:repeat(3,1fr)}
+.seg.seg3 button:nth-child(3n+1){border-left:0}
+.seg.seg3 button:nth-child(n+4){border-top:1px solid var(--line)}
 input.bad,select.bad{border-color:var(--down)!important}
 .toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top));z-index:80;background:var(--ink);color:var(--bg);
   padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;max-width:calc(100vw - 40px);text-align:center}
@@ -149,6 +152,9 @@ input.bad,select.bad{border-color:var(--down)!important}
 .nchips{display:flex;gap:6px;margin-top:10px}
 .nchips button{flex:1;padding:6px 0;border-radius:8px;border:1px solid #233056;color:#8E9CC4;font-size:12.5px;font-weight:700}
 .nchips button[aria-pressed="true"]{color:#22F5D0;border-color:#22F5D0;box-shadow:0 0 10px rgba(34,245,208,.35),inset 0 0 8px rgba(34,245,208,.15)}
+.nmarks{display:flex;gap:6px;margin-top:8px}
+.nmarks button{flex:1;padding:5px 0;border-radius:8px;border:1px solid #233056;color:#5D6C8C;font-size:12px;font-weight:700}
+.nmarks button[aria-pressed="true"]{color:var(--mc);border-color:var(--mc);box-shadow:0 0 8px color-mix(in srgb,var(--mc) 40%,transparent)}
 .nnote{font-size:12px;color:#7F8DB3;margin:8px 2px 0}
 .cal .nav{width:40px;height:40px;border-radius:10px;border:1px solid #233056;color:#22F5D0;font-size:24px;line-height:1}
 .cw{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:12px 0 4px;text-align:center;font-size:11px;font-weight:700;color:#5D6C8C}
@@ -176,7 +182,8 @@ input.bad,select.bad{border-color:var(--down)!important}
    Data
    ============================================================ */
 const KEY='portefolje_v1';
-const TYPES={buy:'Kjøp',sell:'Salg',div:'Utbytte',split:'Splitt'};
+const TYPES={buy:'Kjøp',sell:'Salg',div:'Utbytte',split:'Splitt',dep:'Innskudd',wd:'Uttak'};
+const isCashTx=t=>t.type==='dep'||t.type==='wd';
 const CURS=['NOK','USD','EUR','SEK','DKK','GBP'];
 const uid=()=>Date.now().toString(36).slice(-4)+Math.random().toString(36).slice(2,7);
 let DB;
@@ -244,7 +251,10 @@ const ICON={
    security, keeping FIFO lots in kroner (fees included in cost, deducted
    from proceeds) — the same method Skatteetaten uses for shares.
    ============================================================ */
-const ORDER={split:0,buy:1,div:2,sell:3};
+const ORDER={split:0,dep:0.5,buy:1,div:2,sell:3,wd:4};
+/* for cash, money coming in on a day is available to that day's buys */
+const CASHORDER={dep:0,sell:1,div:2,buy:3,wd:4,split:5};
+const cashSort=txs=>txs.slice().sort((a,b)=>a.date.localeCompare(b.date)||(CASHORDER[a.type]-CASHORDER[b.type]));
 /* A foreign-currency line without its own rate borrows today's, and is flagged. */
 function txCur(t){ return t.cur||sec(t.secId)?.cur||'NOK'; }
 function txFx(t){ const c=txCur(t); if(c==='NOK') return 1; const f=num(t.fx); return f>0?f:fxNow(c); }
@@ -254,12 +264,13 @@ const fxMissing=t=>txCur(t)!=='NOK'&&!(num(t.fx)>0)&&t.type!=='split';
 const kindOf=s=>isFund(s)?'fond':'aksje';
 const scope=()=>DB.settings.scope||'all';
 const bothKinds=()=>DB.secs.some(isFund)&&DB.secs.some(s=>!isFund(s));
-function inScope(secId){ const sc=scope(); if(sc==='all'||!bothKinds()) return true; const s=sec(secId); return !!s&&kindOf(s)===sc; }
+function inScope(secId){ const sc=scope(); if(!secId) return sc==='all'||!bothKinds(); if(sc==='all'||!bothKinds()) return true; const s=sec(secId); return !!s&&kindOf(s)===sc; }
 function sortedTx(all){ return DB.tx.filter(t=>all||inScope(t.secId)).sort((a,b)=>a.date.localeCompare(b.date)||(ORDER[a.type]-ORDER[b.type])||(a.created||0)-(b.created||0)); }
 function compute(){
   const lots={}, realized=[], divs=[], errors=[];
   const K=(a,s)=>a+'|'+s;
   for(const t of sortedTx()){
+    if(isCashTx(t)) continue;
     const k=K(t.accId,t.secId); const L=lots[k]=lots[k]||[];
     if(fxMissing(t)) errors.push({tx:t, msg:`mangler valutakurs for ${txCur(t)} – trykk her og hent den`});
     if(t.type==='buy'){
@@ -289,8 +300,25 @@ function compute(){
     const s=sec(p.secId), px=s&&num(s.price), fx=s?fxNow(s.cur):NaN;
     p.value=(px>0&&fx>0)?p.qty*px*fx:null; p.unreal=p.value!=null?p.value-p.cost:null; p.avg=p.cost/p.qty;
   }
-  return {pos, realized, divs, errors};
+  const cash=cashOn()?cashReplay(sortedTx(true)):null;
+  return {pos, realized, divs, errors, cash};
 }
+/* Cash per account. Sales and dividends stay on the account as cash (unless the
+   account pays out to the bank), and buys use that cash first — only the part
+   the cash doesn't cover counts as new money put in. That keeps "net deposited"
+   honest when you sell and later buy again. */
+const cashOn=()=>scope()==='all'||!bothKinds();
+const keepsCash=accId=>(acc(accId)||{}).cash!=='out';
+function cashStep(st,t){
+  const a=t.accId; st.bal[a]=st.bal[a]||0; const keep=keepsCash(a);
+  if(t.type==='buy'){ const c=-txAmount(t); if(keep){ const use=Math.max(0,Math.min(st.bal[a],c)); st.bal[a]-=use; st.dep+=c-use; } else st.dep+=c; }
+  else if(t.type==='sell'||t.type==='div'){ const p=txAmount(t); if(keep) st.bal[a]+=p; else st.dep-=p; }
+  else if(t.type==='dep'){ const v=num(t.amount)||0; st.bal[a]+=v; st.dep+=v; }
+  else if(t.type==='wd'){ const v=num(t.amount)||0; st.bal[a]-=v; st.dep-=v; }
+}
+function cashReplay(txs){ const st={bal:{},dep:0}; cashSort(txs).forEach(t=>cashStep(st,t));
+  Object.keys(st.bal).forEach(k=>{ if(Math.abs(st.bal[k])<0.005) st.bal[k]=0; });
+  return {byAcc:st.bal, total:Object.values(st.bal).reduce((a,b)=>a+b,0), deposited:st.dep}; }
 /* Shares held at the close of the day before the ex-date = entitled to the dividend. */
 function qtyHeld(secId, accId, beforeDate){
   let q=0;
@@ -476,11 +504,13 @@ async function refreshAll(manual=true){
       if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }
     if(!dataReady()){ if(manual) toast('Valutakurser oppdatert. Legg inn API-nøkkel under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=compute().pos;
-    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)));
+    /* what you own now first, so the free daily quota goes where it matters */
+    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
     let ok=0, fail=[];
-    for(const s of list){ const r=await refreshSec(s); if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push(s.name); await sleep(PROVIDER_GAP_MS); }
+    let later=0;
+    for(const s of list){ if(typeof budget==='function'&&budget()<=0){ later++; continue; } const r=await refreshSec(s); if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push(s.name); await sleep(PROVIDER_GAP_MS); }
     DB.lastRefresh=new Date().toISOString(); save();
-    if(manual) toast(fail.length?`Oppdatert ${ok} – fikk ikke hentet ${fail.join(', ')}`:`Kurser oppdatert for ${ok} ${ok===1?'post':'poster'}`);
+    if(manual) toast(`Oppdatert ${ok}`+(fail.length?` · fikk ikke hentet ${fail.slice(0,4).join(', ')}${fail.length>4?' m.fl.':''}`:'')+(later?` · ${later} hentes i morgen (dagens 20 oppslag er brukt)`:''));
   } finally { refreshing=false; render(); }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -503,7 +533,7 @@ function lastOn(map, keys, d){ // keys sorted asc; last value with key<=d
   return ans>=0?map[keys[ans]]:undefined;
 }
 function dailySeries(){
-  const key=JSON.stringify([scope(), DB.tx.length, DB.tx.map(t=>t.id+t.date+t.qty+t.price+t.fx+t.ratio).join('').length, DB.secs.map(s=>(s.price||'')+Object.keys(s.hist||{}).length).join(','), Object.values(DB.fxHist||{}).map(h=>Object.keys(h).length).join(',')]);
+  const key=JSON.stringify([scope(), DB.accounts.map(a=>a.cash||'').join(), DB.tx.map(t=>t.amount||'').join(), DB.tx.length, DB.tx.map(t=>t.id+t.date+t.qty+t.price+t.fx+t.ratio).join('').length, DB.secs.map(s=>(s.price||'')+Object.keys(s.hist||{}).length).join(','), Object.values(DB.fxHist||{}).map(h=>Object.keys(h).length).join(',')]);
   if(_series&&_seriesKey===key) return _series;
   const tx=sortedTx(); if(!tx.length) return (_series={days:[],hasHist:false});
   const start=tx[0].date, end=today();
@@ -511,10 +541,14 @@ function dailySeries(){
   const fxk={}; Object.entries(DB.fxHist||{}).forEach(([c,h])=>{ fxk[c]=Object.keys(h).sort(); });
   const hasHist=DB.secs.some(s=>hk[s.id].length>1);
   const qty={}, lastTradePx={};
+  const withCash=cashOn(); const cst={bal:{},dep:0};
   let i=0, invested=0, prev=null; const days=[];
   for(let d=start; d<=end; d=addDays(d,1)){
     let flow=0, div=0; const events=[];
-    while(i<tx.length&&tx[i].date===d){ const t=tx[i++]; events.push(t);
+    const today_=[]; while(i<tx.length&&tx[i].date===d) today_.push(tx[i++]);
+    if(withCash) cashSort(today_).forEach(t=>cashStep(cst,t));
+    for(const t of today_){ events.push(t);
+      if(isCashTx(t)) continue;
       if(t.type==='buy'){ qty[t.secId]=(qty[t.secId]||0)+num(t.qty); const c=-txAmount(t); flow+=c; invested+=c; lastTradePx[t.secId]=num(t.price); }
       else if(t.type==='sell'){ qty[t.secId]=(qty[t.secId]||0)-num(t.qty); const p=txAmount(t); flow-=p; invested-=p; lastTradePx[t.secId]=num(t.price); }
       else if(t.type==='split'){ const r=num(t.ratio)||1; qty[t.secId]=(qty[t.secId]||0)*r; if(lastTradePx[t.secId]) lastTradePx[t.secId]/=r; }
@@ -527,8 +561,11 @@ function dailySeries(){
       if(d===end&&num(s.price)>0) px=num(s.price);
       let fx=1; if(s.cur!=='NOK'){ const H=(DB.fxHist||{})[s.cur]; fx=(H&&fxk[s.cur]?lastOn(H,fxk[s.cur],d):undefined)||fxNow(s.cur)||1; }
       value+=q*(px||0)*fx; }
-    const gain=prev?value-prev.value-flow:0;
-    days.push({d, value, invested, flow, div, gain, events, priced});
+    let cash=0;
+    if(withCash){ cash=Object.values(cst.bal).reduce((a,b)=>a+b,0); value+=cash; flow=cst.dep-(prev?prev.invested:0); invested=cst.dep; }
+    /* with cash tracked, dividends land in value; take them out so a day's figure is price movement */
+    const gain=prev?value-prev.value-flow-(withCash?div:0):0;
+    days.push({d, value, invested, flow, div, gain, events, priced, cash});
     prev=days[days.length-1];
   }
   _seriesKey=key; _series={days, hasHist};
@@ -566,13 +603,28 @@ function valueChart(){
       <path d="${area}" fill="url(#fav)"/>
       <path d="${line('invested')}" fill="none" stroke="${NEON.b}" stroke-width="1.6" stroke-dasharray="4 4" filter="url(#gv)" opacity=".85"/>
       <path d="${line('value')}" fill="none" stroke="${NEON.a}" stroke-width="2.2" stroke-linejoin="round" filter="url(#gv)"/>
+      ${marks(pts,x,y)}
       <circle cx="${x(pts.length-1)}" cy="${y(last.value)}" r="3.6" fill="${NEON.a}" filter="url(#gv)"/>
       ${lab}<g class="scrub" style="display:none"><line y1="${T}" y2="${H-B}" stroke="#fff" stroke-opacity=".35"/><circle r="4" fill="${NEON.a}"/></g></svg>
     <div class="nread tiny num" id="nread">&nbsp;</div>
-    <div class="nlegend"><span><i style="background:${NEON.a}"></i>Markedsverdi</span><span><i style="background:${NEON.b}"></i>Netto innskutt</span></div>
+    <div class="nlegend"><span><i style="background:${NEON.a}"></i>Markedsverdi</span><span><i style="background:${NEON.b}"></i>Netto satt inn</span></div>
+    <div class="nmarks">${[['buy','▲ Kjøp',NEON.up],['sell','▼ Salg',NEON.down],['div','● Utbytte',NEON.c]].map(([k,l,c])=>`<button data-act="mark" data-k="${k}" aria-pressed="${!!markOpts()[k]}" style="--mc:${c}">${l}</button>`).join('')}</div>
     <div class="nchips">${RANGES.map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join('')}</div>
     ${!S.hasHist?`<p class="nnote">Kurve mellom handlene fylles ut når appen har hentet kurshistorikk (via mellomstasjonen). Til da brukes kursen ved hver handel.</p>`:''}
   </div>`;
+}
+const markOpts=()=>Object.assign({buy:true,sell:true,div:false},DB.settings.marks||{});
+/* trade markers sit on the value line: up-triangles for buys, down for sells */
+function marks(pts,x,y){
+  const o=markOpts(); let out='';
+  pts.forEach((p,i)=>{ if(!p.events.length) return;
+    const has=k=>p.events.some(t=>t.type===k);
+    const cx=x(i), cy=y(p.value);
+    if(o.buy&&has('buy')) out+=`<path d="M${cx} ${cy+5} l5 9 h-10z" fill="${NEON.up}" filter="url(#gv)" opacity=".95"><title>${esc(prettyDate(p.d))}: kjøp</title></path>`;
+    if(o.sell&&has('sell')) out+=`<path d="M${cx} ${cy-5} l5 -9 h-10z" fill="${NEON.down}" filter="url(#gv)" opacity=".95"><title>${esc(prettyDate(p.d))}: salg</title></path>`;
+    if(o.div&&has('div')) out+=`<circle cx="${cx}" cy="${cy}" r="3.2" fill="${NEON.c}" filter="url(#gv)"><title>${esc(prettyDate(p.d))}: utbytte</title></circle>`;
+  });
+  return out;
 }
 function divChart(C){
   const m={}; C.divs.forEach(d=>{ const k=d.date.slice(0,7); m[k]=(m[k]||0)+d.net; });
@@ -606,7 +658,8 @@ function scrub(e){
   const x=8+i*(vb.width-16)/Math.max(1,pts.length-1), y=14+(hi-p.value)/(hi-lo)*(vb.height-36);
   const g=svg.querySelector('.scrub'); g.style.display=''; g.querySelector('line').setAttribute('x1',x); g.querySelector('line').setAttribute('x2',x);
   g.querySelector('circle').setAttribute('cx',x); g.querySelector('circle').setAttribute('cy',y);
-  const rd=document.getElementById('nread'); if(rd) rd.innerHTML=`${esc(prettyDate(p.d))} · <b>${kr(p.value)}</b> · innskutt ${kr(p.invested)} · <span style="color:${p.value-p.invested>=0?NEON.up:NEON.down}">${sgn(p.value-p.invested)} kr</span>`;
+  const ev=p.events.filter(t=>!isCashTx(t)).map(t=>`${TYPES[t.type].toLowerCase()} ${esc(sec(t.secId)?.name||'')}`).slice(0,3).join(', ');
+  const rd=document.getElementById('nread'); if(rd) rd.innerHTML=`${esc(prettyDate(p.d))} · <b>${kr(p.value)}</b> · innskutt ${kr(p.invested)} · <span style="color:${p.value-p.invested>=0?NEON.up:NEON.down}">${sgn(p.value-p.invested)} kr</span>${p.cash?` · kontanter ${kr(p.cash)}`:''}${ev?`<br>${ev}`:''}`;
 }
 
 /* ---------- Calendar: gain per day ---------- */
@@ -732,7 +785,7 @@ function importPreview(sh, parsed, fname){
   const go=sh.querySelector('#impgo'); if(!fresh.length) return;
   go.onclick=()=>{
     let accId=sh.querySelector('#impacc').value;
-    if(accId==='__new'){ const a={id:uid(),name:'KLP Fond',type:'ord'}; DB.accounts.push(a); accId=a.id; }
+    if(accId==='__new'){ const a={id:uid(),name:'KLP Fond',type:'ord',cash:'out'}; DB.accounts.push(a); accId=a.id; }
     const secFor=r=>{ let s=existingSec(r);
       if(!s){ s={id:uid(),name:r.name,kind:'fond',ticker:r.isin,cur:'NOK',divCur:'',sector:fundSector(r.name),price:'',priceAt:'',priceSrc:''}; DB.secs.push(s); }
       return s; };
@@ -748,6 +801,31 @@ function importPreview(sh, parsed, fname){
     toast(`${n} transaksjoner importert`);
     if(dataReady()) setTimeout(()=>refreshAll(true),300);
   };
+}
+
+/* ---------- Oslo Børs tickers for common names, so dividends and prices can be fetched ---------- */
+const OSLO_TICKERS=[[/equinor/,'EQNR'],[/^dnb/,'DNB'],[/telenor/,'TEL'],[/orkla/,'ORK'],[/norsk hydro|^hydro/,'NHY'],[/^yara/,'YAR'],[/^mowi|marine harvest/,'MOWI'],
+  [/aker ?bp/,'AKRBP'],[/^aker solutions/,'AKSO'],[/^aker asa|^aker$/,'AKER'],[/^elkem/,'ELK'],[/atlantic sapphire/,'ASA'],[/airthings/,'AIRX'],[/bergenbio/,'BGBIO'],[/^bouvet/,'BOUV'],
+  [/storebrand/,'STB'],[/rana gruber/,'RANA'],[/austevoll/,'AUSS'],[/grieg seafood/,'GSF'],[/mpc container/,'MPCC'],[/2020 bulkers/,'2020'],[/europris/,'EPR'],[/pareto bank/,'PARB'],
+  [/solstad maritime/,'SOMA'],[/kongsberg gruppen/,'KOG'],[/salmar/,'SALM'],[/ler(ø|o)y/,'LSG'],[/frontline/,'FRO'],[/hafnia/,'HAFNI'],[/subsea ?7/,'SUBC'],[/^tomra/,'TOM'],
+  [/gjensidige/,'GJF'],[/nordic semiconductor/,'NOD'],[/autostore/,'AUTO'],[/v(å|a)r energi/,'VAR'],[/^kitron/,'KIT'],[/wallenius wilhelmsen/,'WAWI'],[/schibsted/,'SCHA'],
+  [/borregaard/,'BRG'],[/entra/,'ENTRA'],[/sparebank 1 smn|smn/,'MING'],[/sparebank 1 s(ø|o)r-norge|sr-bank/,'SRBNK'],[/protector/,'PROT'],[/kid asa|^kid$/,'KID'],[/^xxl/,'XXL'],
+  [/norwegian air/,'NAS'],[/b(ø|o)rr drilling/,'BORR'],[/^dno/,'DNO'],[/^bw lpg/,'BWLPG'],[/^bw offshore/,'BWO'],[/^tgs/,'TGS'],[/^nel( asa)?$/,'NEL'],[/scatec/,'SCATC'],
+  [/^aker horizons/,'AKH'],[/hexagon composites/,'HEX'],[/^mpc energy/,'MPCES'],[/odfjell drilling/,'ODL'],[/^okea/,'OKEA'],[/^panoro/,'PEN'],[/^veidekke/,'VEI'],[/^af gruppen/,'AFG'],
+  [/^crayon/,'CRAYN'],[/^atea/,'ATEA'],[/^pexip/,'PEXIP'],[/^kahoot/,'KAHOT'],[/^opera/,'OPRA'],[/^norske skog/,'NSKOG'],[/bakkafrost/,'BAKKA'],[/^cloudberry/,'CLOUD']];
+function tickerGuess(name){ const n=String(name||'').toLowerCase().trim(); const hit=OSLO_TICKERS.find(([re])=>re.test(n)); return hit?hit[1]:''; }
+function fillTickers(){
+  const list=DB.secs.filter(s=>!s.ticker&&!isFund(s)).map(s=>({s,t:tickerGuess(s.name)})).filter(x=>x.t);
+  if(!list.length) return toast('Fant ingen å fylle inn');
+  const sh=openSheet(`<h3>Fyll inn tickere</h3><p class="sub">Sjekk listen, fjern haken på det som ikke stemmer, og trykk Lagre. Alle er på Oslo Børs (NOK).</p>
+    ${list.map((x,i)=>`<label class="item" style="cursor:pointer"><input type="checkbox" data-i="${i}" checked style="width:20px;height:20px"><div class="b"><b>${esc(x.s.name)}</b></div><div class="r"><input data-t="${i}" value="${x.t}" style="width:84px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--card);text-align:center;font-weight:650" autocapitalize="characters"></div></label>`).join('')}
+    <button class="btn solid full" id="ftsave" style="margin-top:6px">Lagre ${list.length} tickere</button>
+    <p class="note">Ukjente aksjer kan du fylle inn selv under Beholdning. Tickeren er koden på Oslo Børs, f.eks. EQNR.</p>`);
+  sh.querySelector('#ftsave').onclick=()=>{ let n=0;
+    list.forEach((x,i)=>{ if(!sh.querySelector(`[data-i="${i}"]`).checked) return; const t=sh.querySelector(`[data-t="${i}"]`).value.trim().toUpperCase(); if(!t) return;
+      x.s.ticker=t; if(!x.s.cur) x.s.cur='NOK'; n++; });
+    save(); closeSheet(); render(); toast(`${n} tickere lagt inn${dataReady()?' – henter kurser og utbytte':''}`);
+    if(dataReady()) setTimeout(()=>refreshAll(true),300); };
 }
 
 /* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
@@ -892,7 +970,8 @@ function totals(C){
   const value=P.reduce((s,p)=>s+(p.value??p.cost),0), cost=P.reduce((s,p)=>s+p.cost,0);
   const unreal=P.reduce((s,p)=>s+(p.unreal||0),0), missing=P.filter(p=>p.value==null).length;
   const real=C.realized.reduce((s,r)=>s+r.gain,0), div=C.divs.reduce((s,d)=>s+d.net,0);
-  return {value,cost,unreal,missing,real,div,total:unreal+real+div};
+  const cash=C.cash?C.cash.total:0;
+  return {value:value+cash,secValue:value,cash,deposited:C.cash?C.cash.deposited:null,cost,unreal,missing,real,div,total:unreal+real+div};
 }
 function allocHtml(items){
   const tot=items.reduce((s,x)=>s+x.v,0); if(!tot) return '';
@@ -921,6 +1000,7 @@ function viewHome(C){
       <div class="lbl">Markedsverdi nå</div>
       <div class="big num">${kr(t.value)}</div>
       <div class="tiny ${cls(t.total)}"><b class="num">${sgn(t.total)} kr</b> totalt siden start · urealisert + realisert + utbytte</div>
+      ${t.cash?`<div class="tiny muted" style="margin-top:3px">Herav kontanter <b class="num">${kr(t.cash)}</b> · netto satt inn ${kr(t.deposited)}</div>`:''}
       ${t.missing?`<p class="note" style="margin:6px 0 0">${t.missing} ${t.missing===1?'aksje mangler':'aksjer mangler'} kurs og er regnet til kostpris. Trykk ${'↻'} øverst for å hente kurser.</p>`:''}
       <div class="kv">
         <div><span>Investert i det du eier</span><b class="num">${kr(t.cost)}</b></div>
@@ -967,23 +1047,30 @@ function aiHtml(a){
 function viewHold(C){
   const P=Object.values(C.pos).sort((a,b)=>(b.value??b.cost)-(a.value??a.cost));
   const closed=DB.secs.filter(s=>!C.pos[s.id]);
-  if(!P.length&&!closed.length) return `<div class="empty"><h3>Ingenting her ennå</h3><p>Aksjene dukker opp når du legger inn et kjøp.</p></div>`;
+  if(!P.length&&!closed.length&&!(C.cash&&C.cash.total)) return `<div class="empty"><h3>Ingenting her ennå</h3><p>Aksjene dukker opp når du legger inn et kjøp.</p></div>`;
   const row=(s,p)=>{ const d12=divLast12(C,s.id);
     return `<button class="item" data-act="opensec" data-id="${s.id}">
       <div class="b"><b>${esc(s.name)}</b><span>${isFund(s)?'<span class="tag">Fond</span> ':''}${p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'} · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
       <div class="r">${p?`<b class="num">${kr(p.value??p.cost)}</b><span class="num ${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):'mangler kurs'}</span>`:`<span class="num ${cls(realOf(C,s.id))}">${sgn(realOf(C,s.id))} kr</span>`}${d12?`<span class="tiny muted num">utb. ${nf(d12)} kr/år</span>`:''}</div></button>`; };
   const closedS=closed.filter(s=>inScope(s.id));
+  const noTick=DB.secs.filter(s=>!s.ticker&&!isFund(s)&&tickerGuess(s.name));
+  const tickNote=noTick.length?`<div class="card" style="border-color:var(--warn)"><b>${noTick.length} ${noTick.length===1?'aksje mangler':'aksjer mangler'} ticker</b><p class="tiny muted" style="margin:4px 0 8px">Uten ticker hentes verken kurs eller utbytte. Appen kjenner igjen ${noTick.map(s=>esc(s.name)).slice(0,6).join(', ')}${noTick.length>6?' …':''}.</p><button class="btn sm solid" data-act="filltick">Fyll inn tickere</button></div>`:'';
+  const cashRows=C.cash?Object.entries(C.cash.byAcc).filter(([a,v])=>Math.abs(v)>=1).map(([a,v])=>`<button class="item" data-act="accounts"><div class="b"><b>${esc(acc(a)?.name||'Konto')}</b><span>Kontanter${acc(a)?.type==='ask'?' · ASK':''}</span></div><div class="r"><b class="num ${v<0?'down':''}">${kr(v)}</b></div></button>`).join(''):'';
+  const cashHtml=cashRows?`<h2 class="sec spread"><span>Kontanter</span><span class="num">${kr(C.cash.total)}</span></h2>${cashRows}`:'';
   if(scope()==='all'&&bothKinds()){
     const grp=k=>{ const L=P.filter(p=>kindOf(sec(p.secId))===k); if(!L.length) return '';
       const v=L.reduce((a,p)=>a+(p.value??p.cost),0), c=L.reduce((a,p)=>a+p.cost,0), u=L.reduce((a,p)=>a+(p.unreal||0),0);
       return `<h2 class="sec spread" style="margin-top:${k==='aksje'?'4px':'22px'}"><span>${k==='fond'?'Fond':'Aksjer'}</span><span class="num">${kr(v)} · <span class="${cls(u)}">${pct(c?u/c*100:null)}</span></span></h2>${L.map(p=>row(sec(p.secId),p)).join('')}`; };
-    return grp('aksje')+grp('fond')+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
+    return tickNote+grp('aksje')+grp('fond')+cashHtml+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
   }
-  return P.map(p=>row(sec(p.secId),p)).join('')+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
+  return tickNote+P.map(p=>row(sec(p.secId),p)).join('')+cashHtml+(closedS.length?`<h2 class="sec">Tidligere eid</h2>${closedS.map(s=>row(s,null)).join('')}`:'');
 }
 const realOf=(C,id)=>C.realized.filter(r=>r.secId===id).reduce((s,r)=>s+r.gain,0);
 function divLast12(C,id){ const from=addDays(today(),-365); return C.divs.filter(d=>d.secId===id&&d.date>=from).reduce((s,d)=>s+d.net,0); }
 function txLine(t){
+  if(isCashTx(t)){ const a=acc(t.accId);
+    return `<button class="item" data-act="opentx" data-id="${t.id}"><div class="b"><b>${esc(TYPES[t.type])} · ${esc(a?.name||'Konto')}</b><span>${esc(prettyDate(t.date))}${t.note?' · '+esc(t.note):''}</span></div>
+      <div class="r"><b class="num ${t.type==='dep'?'up':''}">${sgn(txAmount(t))}</b><span class="tiny muted">kr</span></div></button>`; }
   const s=sec(t.secId), a=acc(t.accId), cur=t.cur||s?.cur||'NOK';
   let what='';
   if(t.type==='buy'||t.type==='sell') what=`${qf(num(t.qty))}${isFund(s)?' andeler':''} × ${nf(num(t.price),isFund(s)?4:2).replace(/(,\d\d)0+$/,'$1')} ${cur}`;
@@ -1001,17 +1088,18 @@ const fold=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 function txAmount(t){
   return t.type==='buy'?-(num(t.qty)*num(t.price)*(txFx(t)||1)+(num(t.fee)||0))
     :t.type==='sell'?num(t.qty)*num(t.price)*(txFx(t)||1)-(num(t.fee)||0)
-    :t.type==='div'?num(t.qty)*num(t.perShare)*(txFx(t)||1)-(num(t.tax)||0):0;
+    :t.type==='div'?num(t.qty)*num(t.perShare)*(txFx(t)||1)-(num(t.tax)||0)
+    :t.type==='dep'?(num(t.amount)||0):t.type==='wd'?-(num(t.amount)||0):0;
 }
 function txHay(t){
   const s=sec(t.secId)||{}, a=acc(t.accId)||{}, amt=txAmount(t);
-  return fold([TYPES[t.type], s.name, s.ticker, s.sector, isFund(s)?'fond':'aksje', a.name, a.type==='ask'?'ask aksjesparekonto':'',
+  return fold([TYPES[t.type], s.name, s.ticker, isCashTx(t)?'kontanter innskudd uttak':'', s.sector, isFund(s)?'fond':'aksje', a.name, a.type==='ask'?'ask aksjesparekonto':'',
     t.note, t.cur||s.cur, t.date, isoToDMY(t.date), prettyDate(t.date), MON[parseYmd(t.date).getMonth()],
     t.qty, t.price, t.perShare, Math.round(Math.abs(amt)), nf(Math.abs(amt)), t.auto?'automatisk':''].join(' '));
 }
 function txListHtml(){
   const words=fold(txQuery).split(/\s+/).filter(Boolean);
-  const list=DB.tx.filter(t=>inScope(t.secId)&&(txFilter==='all'||t.type===txFilter)&&(!words.length||(h=>words.every(w=>h.includes(w)))(txHay(t))))
+  const list=DB.tx.filter(t=>inScope(t.secId)&&(txFilter==='all'||t.type===txFilter||(txFilter==='cash'&&isCashTx(t)))&&(!words.length||(h=>words.every(w=>h.includes(w)))(txHay(t))))
     .sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
   if(!list.length) return `<p class="muted tiny" style="margin:10px 2px">${words.length?'Ingen treff.':'Ingen i denne kategorien.'}</p>`;
   let lastY='', out='';
@@ -1025,7 +1113,7 @@ function viewTx(){
   if(!DB.tx.length) return `<div class="empty"><h3>Ingen transaksjoner</h3><p>Trykk «Ny transaksjon» for å legge inn et kjøp.</p></div>`;
   return `<div class="f" style="margin-bottom:8px;position:relative"><input type="text" inputmode="search" id="txq" value="${esc(txQuery)}" placeholder="Søk: aksje, fond, konto, år, måned, beløp…" autocomplete="off" enterkeyhint="search" style="padding-right:40px">
       ${txQuery?'<button id="txqx" aria-label="Tøm søk" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;color:var(--muted);font-size:18px">×</button>':''}</div>
-    <div class="chips">${[['all','Alle'],['buy','Kjøp'],['sell','Salg'],['div','Utbytte'],['split','Splitt']].map(([k,l])=>`<button class="chip" data-act="txf" data-k="${k}" aria-pressed="${txFilter===k}">${l}</button>`).join('')}</div>
+    <div class="chips">${[['all','Alle'],['buy','Kjøp'],['sell','Salg'],['div','Utbytte'],['split','Splitt'],['cash','Inn/ut']].map(([k,l])=>`<button class="chip" data-act="txf" data-k="${k}" aria-pressed="${txFilter===k}">${l}</button>`).join('')}</div>
     <div id="txlist">${txListHtml()}</div>`;
 }
 document.addEventListener('input',e=>{
@@ -1085,8 +1173,10 @@ function txSheet(id, preset){
   if(!t) return;
   let type=t.type;
   const sh=openSheet(`<h3>${id?'Endre transaksjon':'Ny transaksjon'}</h3><p class="sub">Beløp i aksjens valuta. Kurtasje og kildeskatt i kroner.</p>
-    <div class="seg" id="ttype">${Object.entries(TYPES).map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${k===type}">${l}</button>`).join('')}</div>
-    <div class="f"><label for="tsec">Aksje eller fond</label><div class="row"><select id="tsec" style="flex:1"><option value="">Velg…</option>${secOptions(t.secId)}</select>
+    <div class="seg seg3" id="ttype">${Object.entries(TYPES).map(([k,l])=>`<button type="button" data-k="${k}" aria-pressed="${k===type}">${l}</button>`).join('')}</div>
+    <div id="wcash" class="f"><label for="tcash">Beløp (kr)</label><input id="tcash" inputmode="decimal" value="${esc(t.amount||'')}" placeholder="f.eks. 10 000">
+      <p class="hint" id="hcash"></p></div>
+    <div class="f" id="wsec"><label for="tsec">Aksje eller fond</label><div class="row"><select id="tsec" style="flex:1"><option value="">Velg…</option>${secOptions(t.secId)}</select>
       <button type="button" class="btn sm" id="tnewsec">+ Ny</button></div></div>
     <div class="two"><div class="f"><label for="tdate" id="ldate">Dato</label><input id="tdate" value="${esc(isoToDMY(t.date))}" placeholder="DD.MM.ÅÅÅÅ" inputmode="numeric"></div>
       <div class="f"><label for="tacc">Konto</label><select id="tacc">${accOptions(t.accId)}</select></div></div>
@@ -1112,12 +1202,15 @@ function txSheet(id, preset){
   const q=s=>sh.querySelector(s);
   const curOf=()=>{ const s=sec(q('#tsec').value); return type==='div'?q('#tcur').value:(s?s.cur:'NOK'); };
   const sync=()=>{
+    const cashT=type==='dep'||type==='wd';
+    q('#wcash').style.display=cashT?'':'none'; q('#wsec').style.display=cashT?'none':'';
+    q('#hcash').textContent=type==='dep'?'Penger du setter inn på kontoen.':type==='wd'?'Penger du tar ut av kontoen, f.eks. til brukskontoen.':'';
     q('#wtrade').style.display=(type==='buy'||type==='sell')?'':'none';
     q('#wdiv').style.display=type==='div'?'':'none';
     q('#wsplit').style.display=type==='split'?'':'none';
     q('#wfee').style.display=(type==='buy'||type==='sell')?'':'none';
     const cur=curOf();
-    q('#wfx').style.display=(type!=='split'&&cur!=='NOK')?'':'none';
+    q('#wfx').style.display=(type!=='split'&&!cashT&&cur!=='NOK')?'':'none';
     q('#lfx').textContent=`Valutakurs (kr per ${cur})`;
     const fund=isFund(sec(q('#tsec').value));
     q('#wamt').style.display=(fund&&(type==='buy'||type==='sell'))?'':'none';
@@ -1156,12 +1249,19 @@ function txSheet(id, preset){
   const collect=(loose)=>({type, secId:q('#tsec').value, accId:q('#tacc').value, date:dmyToIso(q('#tdate').value)||(loose?today():null),
     qty:type==='div'?q('#tdq').value:q('#tqty').value, price:q('#tpx').value, fee:q('#tfee').value, fx:q('#tfx').value,
     cur:type==='div'?q('#tcur').value:(sec(q('#tsec').value)?.cur||'NOK'), perShare:q('#tps').value, tax:q('#ttax').value, ratio:q('#trat').value,
-    exDate:dmyToIso(q('#tex').value)||'', note:q('#tnote').value.trim()});
+    exDate:dmyToIso(q('#tex').value)||'', note:q('#tnote').value.trim(), amount:q('#tcash').value});
   sync();
   q('#tsave').onclick=async()=>{
     const d=collect(false); sh.querySelectorAll('.bad').forEach(x=>x.classList.remove('bad'));
     const bad=(s,m)=>{ q(s).classList.add('bad'); q(s).focus(); toast(m); };
+    if(type==='dep'||type==='wd'){
+      if(!d.date) return bad('#tdate','Dato må være DD.MM.ÅÅÅÅ');
+      if(!(num(d.amount)>0)) return bad('#tcash','Skriv inn beløp');
+      const c={type,accId:d.accId,date:d.date,amount:String(num(d.amount)),cur:'NOK',note:d.note,secId:''};
+      if(id){ Object.keys(t).forEach(k=>{ if(!['id','created'].includes(k)) delete t[k]; }); Object.assign(t,c); } else DB.tx.push({id:uid(),created:Date.now(),...c});
+      save(); closeSheet(); render(); toast(id?'Endret':'Lagret'); return; }
     if(!d.secId) return bad('#tsec','Velg aksje');
+    delete d.amount;
     if(!d.date) return bad('#tdate','Dato må være DD.MM.ÅÅÅÅ');
     if(type==='buy'||type==='sell'){ if(!(num(d.qty)>0)) return bad('#tqty','Skriv inn antall'); if(!(num(d.price)>0)) return bad('#tpx','Skriv inn kurs'); }
     if(type==='div'){ if(!(num(d.perShare)>0)) return bad('#tps','Skriv inn utbytte per aksje'); if(!(num(d.qty)>0)) return bad('#tdq','Skriv inn antall aksjer'); }
@@ -1248,11 +1348,15 @@ function secSheet(id, onSaved, secPreset){
 function accountsSheet(){
   const C=compute();
   const sh=openSheet(`<h3>Kontoer</h3><p class="sub">Aksjesparekonto (ASK) holdes for seg, fordi gevinst og utbytte der ikke skattlegges før du tar ut penger.</p>
-    ${DB.accounts.map((a,i)=>`<div class="card row" style="padding:10px 12px"><div style="flex:1"><b>${esc(a.name)}</b> ${a.type==='ask'?'<span class="tag ask">ASK</span>':'<span class="tag">Ordinær</span>'}</div>
-      <button class="btn sm" data-ren="${i}">Endre</button>${DB.accounts.length>1?`<button class="btn sm danger" data-del="${i}">✕</button>`:''}</div>`).join('')}
+    ${DB.accounts.map((a,i)=>`<div class="card" style="padding:10px 12px"><div class="row"><div style="flex:1"><b>${esc(a.name)}</b> ${a.type==='ask'?'<span class="tag ask">ASK</span>':'<span class="tag">Ordinær</span>'}
+        ${C.cash&&Math.abs(C.cash.byAcc[a.id]||0)>=1?`<div class="tiny muted">Kontanter ${kr(C.cash.byAcc[a.id])}</div>`:''}</div>
+      <button class="btn sm" data-ren="${i}">Endre</button>${DB.accounts.length>1?`<button class="btn sm danger" data-del="${i}">✕</button>`:''}</div>
+      <div class="seg" style="margin:10px 0 0" data-cashacc="${a.id}"><button type="button" data-k="keep" aria-pressed="${a.cash!=='out'}">Salg blir kontanter</button><button type="button" data-k="out" aria-pressed="${a.cash==='out'}">Utbetales til bank</button></div></div>`).join('')}
+    <p class="note" style="margin:-2px 2px 12px">«Salg blir kontanter»: penger fra salg og utbytte står på kontoen og brukes først ved neste kjøp, slik at grafen ikke ser dem som nye innskudd. Velg «Utbetales til bank» der pengene går ut av kontoen, f.eks. fond hos KLP.</p>
     <div class="card"><div class="f"><label for="an">Ny konto</label><input id="an" placeholder="f.eks. ASK hos Nordnet"></div>
       <div class="seg" id="at" style="margin-bottom:10px"><button type="button" data-k="ord" aria-pressed="true">Ordinær</button><button type="button" data-k="ask" aria-pressed="false">Aksjesparekonto</button></div>
       <button class="btn full" id="aadd">Legg til konto</button></div>`);
+  sh.querySelectorAll('[data-cashacc] [data-k]').forEach(b=>b.onclick=()=>{ const a=acc(b.closest('[data-cashacc]').dataset.cashacc); a.cash=b.dataset.k; save(); render(); accountsSheet(); });
   let typ='ord';
   sh.querySelectorAll('#at [data-k]').forEach(b=>b.onclick=()=>{ typ=b.dataset.k; sh.querySelectorAll('#at [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
   sh.querySelector('#aadd').onclick=()=>{ const n=sh.querySelector('#an').value.trim(); if(!n) return sh.querySelector('#an').focus();
@@ -1333,6 +1437,9 @@ document.addEventListener('click',e=>{
   else if(a==='newtx') txSheet(null,{type:'buy'});
   else if(a==='examples') addExamples();
   else if(a==='import') importSheet();
+  else if(a==='accounts') accountsSheet();
+  else if(a==='mark'){ const m=DB.settings.marks=Object.assign({buy:true,sell:true,div:false},DB.settings.marks||{}); m[b.dataset.k]=!m[b.dataset.k]; save(); render(); }
+  else if(a==='filltick') fillTickers();
   else if(a==='opentx') txSheet(b.dataset.id);
   else if(a==='opensec') secSheet(b.dataset.id);
   else if(a==='txf'){ txFilter=b.dataset.k; render(); }
