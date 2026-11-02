@@ -865,11 +865,16 @@ async function eod(path, params){
   const u=`${proxyBase('eodhd','https://eodhd.com')}/api/${path}?api_token=${encodeURIComponent(DB.settings.apiKey)}&fmt=json${params||''}`;
   let r; try{ r=await fetch(u); }catch(e){ throw new Error(DB.settings.proxy?'fikk ikke kontakt via mellomstasjonen – sjekk adressen':'EODHD tillater ikke kall rett fra nettleseren – sett opp mellomstasjonen under'); }
   DB.calls.n++; save();
-  if(r.status===401||r.status===403) throw new Error('nøkkelen ble avvist, eller dette dekkes ikke av gratisplanen');
-  if(r.status===402||r.status===429) throw new Error('dagens kvote hos EODHD er brukt opp');
-  if(r.status===404) throw new Error('fant ikke tickeren');
-  if(!r.ok) throw new Error('EODHD svarte '+r.status);
-  const txt=await r.text(); try{ return JSON.parse(txt); }catch(e){ throw new Error(txt.slice(0,80)||'uleselig svar'); }
+  const txt=await r.text();
+  /* pass EODHD's own words along — they say exactly what's wrong (plan, ticker, quota) */
+  const said=txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,140);
+  const tail=said?` (EODHD: «${said}»)`:'';
+  if(r.status===401) throw new Error('nøkkelen ble avvist'+tail);
+  if(r.status===403) throw new Error('ikke tillatt på din plan eller for denne tickeren'+tail);
+  if(r.status===402||r.status===429) throw new Error('kvoten hos EODHD er brukt opp'+tail);
+  if(r.status===404) throw new Error(`fant ikke ${path.split('/').pop()}`+tail);
+  if(!r.ok) throw new Error('EODHD svarte '+r.status+tail);
+  try{ return JSON.parse(txt); }catch(e){ throw new Error('uventet svar'+tail); }
 }
 async function getQuote(s){
   const sym=eodSymbol(s); if(!sym) return null;
