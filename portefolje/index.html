@@ -48,9 +48,9 @@ button{cursor:pointer;background:none;border:0;padding:0;-webkit-tap-highlight-c
 .ib svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 main{max-width:640px;margin:0 auto;padding:14px 16px}
 
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(5,1fr);background:var(--bg);
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(6,1fr);background:var(--bg);
   border-top:1px solid var(--line);padding:6px 6px calc(8px + max(env(safe-area-inset-bottom),4px));transform:translateZ(0)}
-.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 1px;font-size:11px;white-space:nowrap;font-weight:600;color:var(--faint);position:relative}
+.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:7px 0;font-size:10.5px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;font-weight:600;color:var(--faint);position:relative}
 .tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .tabs button[aria-selected="true"]{color:var(--acc)}
 .fab{position:fixed;right:16px;bottom:calc(84px + max(env(safe-area-inset-bottom),4px));z-index:35;display:flex;align-items:center;gap:7px;
@@ -243,6 +243,7 @@ const ICON={
   moon:'<svg viewBox="0 0 24 24"><path d="M20.5 13.2A8.3 8.3 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>',
   refresh:'<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   cal:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  calcoin:'<svg viewBox="0 0 24 24"><path d="M20 11V7.5A2.5 2.5 0 0 0 17.5 5h-11A2.5 2.5 0 0 0 4 7.5v11A2.5 2.5 0 0 0 6.5 21H11"/><path d="M4 10h16M8 3v4M16 3v4"/><circle cx="17" cy="17" r="4"/><path d="M17 15.2v3.6"/></svg>',
   back:'<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
 };
 
@@ -872,6 +873,77 @@ function fillTickers(){
     if(canFetch()) setTimeout(()=>refreshAll(true),300); };
 }
 
+/* ============================================================
+   Dividend calendar: what came in, what's announced, and what to expect.
+   Expected = last year's dividends repeated, for what you own today.
+   ============================================================ */
+let dcMode='ahead';   // 'ahead' (next 12 months) | 'back' (last 12 months)
+const DC={rec:'#39FF88', ann:'#22F5D0', est:'#FFD23F'};
+function monthKey(d){ return d.slice(0,7); }
+function addMonths(k,n){ const [y,m]=k.split('-').map(Number); const d=new Date(y,m-1+n,1); return `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+const MONL=['Januar','Februar','Mars','April','Mai','Juni','Juli','August','September','Oktober','November','Desember'];
+
+function divEvents(C){
+  const t0=today(), out=[];
+  /* received */
+  C.divs.forEach(d=>out.push({kind:'rec', date:d.date, secId:d.secId, amount:d.net, note:d.tx.exDate?`eks-dato ${prettyDate(d.tx.exDate)}`:''}));
+  const held=C.pos;
+  for(const [sid,p] of Object.entries(held)){
+    const s=sec(sid); if(!s) continue;
+    const items=((DB.divCache[sid]||{}).items||[]).slice().sort((a,b)=>a.exDate.localeCompare(b.exDate));
+    const fx=c=>c==='NOK'?1:(fxNow(c)||1);
+    /* announced: ex-date or pay date still ahead */
+    const ann=items.filter(d=>(d.payDate||d.exDate)>t0);
+    ann.forEach(d=>out.push({kind:'ann', date:d.payDate||d.exDate, exDate:d.exDate, secId:sid, perShare:d.amount, cur:d.cur||s.divCur||s.cur, amount:p.qty*d.amount*fx(d.cur||s.divCur||s.cur), note:`eks-dato ${prettyDate(d.exDate)}`}));
+    /* expected: each dividend from the last 12 months, one year on */
+    let base=items.filter(d=>d.exDate>addDays(t0,-365)&&d.exDate<=t0).map(d=>({exDate:d.exDate, payDate:d.payDate, amount:d.amount, cur:d.cur||s.divCur||s.cur}));
+    if(!base.length){
+      /* no data source history: use what you actually received, per share */
+      base=C.divs.filter(d=>d.secId===sid&&d.date>addDays(t0,-365)).map(d=>({exDate:d.tx.exDate||addDays(d.date,-14), payDate:d.date, amount:num(d.tx.perShare), cur:txCur(d.tx)}));
+    }
+    base.forEach(b=>{
+      const ex=addDays(b.exDate,365), pay=b.payDate?addDays(b.payDate,365):addDays(ex,14);
+      if(pay<=t0) return;
+      if(ann.some(a=>Math.abs(parseYmd(a.exDate)-parseYmd(ex))<50*864e5)) return;   // already announced
+      out.push({kind:'est', date:pay, exDate:ex, secId:sid, perShare:b.amount, cur:b.cur, amount:p.qty*b.amount*fx(b.cur), note:`anslag ut fra ${prettyDate(b.exDate)}`});
+    });
+  }
+  return out.filter(e=>inScope(e.secId)).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+function viewDivCal(C){
+  const ev=divEvents(C), t0=today(), m0=monthKey(t0);
+  const months=dcMode==='ahead'?Array.from({length:12},(_,i)=>addMonths(m0,i)):Array.from({length:12},(_,i)=>addMonths(m0,i-11)).reverse();
+  const inM=k=>ev.filter(e=>monthKey(e.date)===k&&(dcMode==='ahead'?(e.kind!=='rec'||e.date>=addDays(t0,-31)):e.kind==='rec'));
+  const sum=(L,k)=>L.filter(e=>!k||e.kind===k).reduce((a,e)=>a+e.amount,0);
+  const all=months.flatMap(inM);
+  const tot=sum(all), est=sum(all,'est'), ann=sum(all,'ann'), rec=sum(all,'rec');
+  /* neon bars, stacked by kind */
+  const W=360,H=120,T=10,B=20, bw=(W-16)/12;
+  const order=dcMode==='ahead'?months:months.slice().reverse();
+  const max=Math.max(1,...order.map(k=>sum(inM(k))));
+  const bars=order.map((k,i)=>{ const L=inM(k); let y=H-B, out='';
+    ['rec','ann','est'].forEach(kd=>{ const v=sum(L,kd); if(!v) return; const h=v/max*(H-T-B); y-=h;
+      out+=`<rect x="${8+i*bw+bw*.18}" y="${y}" width="${bw*.64}" height="${Math.max(1.5,h)}" rx="2" fill="${DC[kd]}" ${kd==='est'?'fill-opacity=".55"':''} filter="url(#gdc)"/>`; });
+    if(!L.length) out=`<rect x="${8+i*bw+bw*.3}" y="${H-B-1.5}" width="${bw*.4}" height="1.5" fill="${NEON.grid}"/>`;
+    return out+`<text x="${8+i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="${NEON.axis}">${MON[+k.slice(5)-1].slice(0,1).toUpperCase()}</text>`; }).join('');
+  const head=`<div class="neon">
+    <div class="spread"><div><div class="nlbl">${dcMode==='ahead'?'Neste 12 måneder':'Siste 12 måneder'}</div><div class="nbig num">${kr(tot)}</div></div>
+      <div style="text-align:right" class="tiny num">${dcMode==='ahead'?`${rec?`<div style="color:${DC.rec}">mottatt ${kr(rec)}</div>`:''}${ann?`<div style="color:${DC.ann}">annonsert ${kr(ann)}</div>`:''}<div style="color:${DC.est}">anslag ${kr(est)}</div>`:`<div style="color:${DC.rec}">mottatt</div>`}</div></div>
+    <svg viewBox="0 0 ${W} ${H}" class="nsvg"><defs><filter id="gdc" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>${bars}</svg>
+    <div class="nlegend"><span><i style="background:${DC.rec}"></i>Mottatt</span>${dcMode==='ahead'?`<span><i style="background:${DC.ann}"></i>Annonsert</span><span><i style="background:${DC.est}"></i>Anslag</span>`:''}</div>
+    <div class="nchips"><button data-act="dcmode" data-k="ahead" aria-pressed="${dcMode==='ahead'}">Fremover</button><button data-act="dcmode" data-k="back" aria-pressed="${dcMode==='back'}">Bakover</button></div></div>`;
+  const list=months.map(k=>{ const L=inM(k); if(!L.length) return '';
+    const [y,m]=k.split('-');
+    return `<h2 class="sec spread"><span>${MONL[+m-1]} ${y}</span><span class="num">${kr(sum(L))}</span></h2>`+L.map(e=>{ const s=sec(e.secId);
+      const tag=e.kind==='rec'?'<span class="tag" style="background:var(--acc-soft);color:var(--acc)">Mottatt</span>':e.kind==='ann'?'<span class="tag" style="background:#D6F3EE;color:#0B6B5C">Annonsert</span>':'<span class="tag new">Anslag</span>';
+      return `<div class="item" style="cursor:default${e.kind==='est'?';border-style:dashed':''}"><div class="b"><b>${esc(s?.name||'?')}</b><span>${esc(prettyDate(e.date))}${e.perShare?` · ${nf(e.perShare,4).replace(/,?0+$/,'')} ${e.cur}/aksje`:''}${e.note?' · '+esc(e.note):''}</span></div>
+        <div class="r"><b class="num">${e.kind==='est'?'≈ ':''}${kr(e.amount)}</b>${tag}</div></div>`; }).join(''); }).join('');
+  const hasData=Object.values(DB.divCache).some(c=>(c.items||[]).length)||C.divs.length;
+  return head+(list||`<div class="empty"><p>${hasData?'Ingen utbytter i denne perioden.':'Når kursene hentes, kommer utbyttehistorikken med, og da fylles kalenderen. Du kan også føre utbytter selv.'}</p></div>`)
+    +(dcMode==='ahead'?`<p class="note">Anslag er fjorårets utbytter gjentatt for det du eier i dag. Selskapene kan endre eller kutte utbyttet, så tallene er bare en pekepinn. Utbetalingsdato er anslått til ca. to uker etter eks-dato når den ikke er kjent.</p>`:'');
+}
+
 /* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
    Prices are the latest end-of-day close. Dividends come with ex-date, pay date
    and currency, so 2020 Bulkers' USD dividends land in USD. The free plan is
@@ -1064,7 +1136,7 @@ function scopeBar(){
   return `<div class="seg" style="margin-bottom:12px">${[['all','Alt'],['aksje','Aksjer'],['fond','Fond']].map(([k,l])=>`<button data-act="scope" data-k="${k}" aria-pressed="${scope()===k}">${l}</button>`).join('')}</div>`;
 }
 function render(){
-  const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['cal','Kalender',ICON.cal],['tx','Handler',ICON.list],['div','Utbytte',ICON.coin]];
+  const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['cal','Kalender',ICON.cal],['tx','Handler',ICON.list],['div','Utbytte',ICON.coin],['divcal','Utb.kal.',ICON.calcoin]];
   $('#tabs').innerHTML=tabs.map(([k,l,i])=>`<button aria-selected="${view===k}" data-tab="${k}">${i}<span>${l}</span></button>`).join('');
   const C=compute();
   const T=$('#top'), A=$('#app');
@@ -1073,9 +1145,10 @@ function render(){
   else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}${SC}`); A.innerHTML=scopeBar()+viewHold(C); }
   else if(view==='cal'){ T.innerHTML=topbar('Kalender','Endring per dag'+SC); A.innerHTML=scopeBar()+viewCal(); }
   else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.filter(t=>inScope(t.secId)).length} totalt${SC}`); A.innerHTML=scopeBar()+viewTx(C); }
+  else if(view==='divcal'){ T.innerHTML=topbar('Utbyttekalender', 'Mottatt, annonsert og anslått'+SC); A.innerHTML=scopeBar()+viewDivCal(C); }
   else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'+SC); A.innerHTML=scopeBar()+viewDiv(C); }
-  const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:view==='div'?'div':'buy'});
-  $('#fabLbl').textContent=view==='div'?'Nytt utbytte':'Ny transaksjon';
+  const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:(view==='div'||view==='divcal')?'div':'buy'});
+  $('#fabLbl').textContent=(view==='div'||view==='divcal')?'Nytt utbytte':'Ny transaksjon';
 }
 function lastUpdateText(){
   const ts=DB.secs.map(s=>s.priceAt).filter(Boolean).sort(); const l=ts[ts.length-1];
@@ -1578,6 +1651,7 @@ document.addEventListener('click',e=>{
   else if(a==='txf'){ txFilter=b.dataset.k; render(); }
   else if(a==='refresh') refreshAll();
   else if(a==='scope'){ DB.settings.scope=b.dataset.k; save(); render(); }
+  else if(a==='dcmode'){ dcMode=b.dataset.k; render(); }
   else if(a==='range'){ chartRange=b.dataset.k; render(); }
   else if(a==='calm'){ calM.m+=+b.dataset.d; if(calM.m<0){calM.m=11;calM.y--;} if(calM.m>11){calM.m=0;calM.y++;} render(); }
   else if(a==='calday') calDaySheet(b.dataset.k);
