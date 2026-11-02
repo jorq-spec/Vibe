@@ -1205,10 +1205,14 @@ function viewHome(C){
     ${scope()==='all'&&bothKinds()?splitCard(C):''}
     <div class="two"><div class="card"><div class="tiny muted" style="font-weight:650">Valuta</div>${allocHtml(group(C,p=>sec(p.secId)?.cur))}</div>
       <div class="card"><div class="tiny muted" style="font-weight:650">Sektor</div>${allocHtml(group(C,p=>sec(p.secId)?.sector))}</div></div>`:''}
-    ${ys.length?`<h2 class="sec">Per år</h2><div class="card"><table class="t"><thead><tr><th>År</th><th>Realisert</th><th>Utbytte</th>${hasAsk?'<th>ASK</th>':''}</tr></thead><tbody>
-      ${ys.map(y=>`<tr><td>${y}</td><td class="${cls(yrs[y].r)}">${sgn(yrs[y].r)}</td><td>${nf(yrs[y].d)}</td>${hasAsk?`<td class="${cls(yrs[y].ra+yrs[y].da)}">${sgn(yrs[y].ra+yrs[y].da)}</td>`:''}</tr>`).join('')}
-      </tbody></table>
-      <p class="note">Kroner. Realisert er regnet etter først inn, først ut, med kurtasje.${hasAsk?' ASK-kolonnen er gevinst og utbytte på aksjesparekonto, som ikke skattlegges før uttak.':''} Bruk tallene som støtte, ikke som fasit, når du fyller ut skattemeldingen.</p></div>`:''}
+    ${ys.length?`<h2 class="sec">Per år</h2>${(()=>{
+      const tbl=(title,kR,kD,note)=>{ const rows=ys.filter(y=>yrs[y][kR]||yrs[y][kD]); if(!rows.length) return '';
+        return `<div class="card"><div class="tiny muted" style="font-weight:650;margin-bottom:4px">${title}</div><table class="t"><thead><tr><th>År</th><th>Realisert</th><th>Utbytte</th><th>Sum</th></tr></thead><tbody>
+          ${rows.map(y=>{ const r=yrs[y][kR], d=yrs[y][kD]; return `<tr><td>${y}</td><td class="${cls(r)}">${sgn(r)}</td><td>${nf(d)}</td><td class="${cls(r+d)}"><b>${sgn(r+d)}</b></td></tr>`; }).join('')}
+          </tbody></table>${note?`<p class="note">${note}</p>`:''}</div>`; };
+      return tbl(hasAsk?'Ordinære kontoer':'Alle kontoer','r','d',`Kroner. Realisert er regnet etter først inn, først ut, med kurtasje.${hasAsk?' Dette er det som skattlegges det året.':''} Bruk tallene som støtte, ikke som fasit, når du fyller ut skattemeldingen.`)
+        +(hasAsk?tbl('Aksjesparekonto (ASK)','ra','da','Gevinst og utbytte på ASK skattlegges ikke før du tar ut mer enn du har satt inn.'):'');
+    })()}`:''}
     <h2 class="sec">Analyse</h2>
     <div class="card ai" id="ai">${DB.lastAi?aiHtml(DB.lastAi):`<p class="tiny muted">Få en AI-gjennomgang av porteføljen: spredning, valuta, avhengighet av enkeltselskaper og utbytte. Tips, ikke råd.</p>`}
       <button class="btn sm" data-act="ai">${DB.lastAi?'Lag ny analyse':'Lag analyse'}</button></div>`;
