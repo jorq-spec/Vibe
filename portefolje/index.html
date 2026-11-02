@@ -509,7 +509,7 @@ async function refreshAll(manual=true){
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
-    for(const s of list){ if(!(yahooReady()&&yahooSymbol(s))&&dataReady()&&budget()<=0){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
+    for(const s of list){ if((eodFirst()||!(yahooReady()&&yahooSymbol(s)))&&dataReady()&&budget()<=0&&!(yahooReady()&&yahooSymbol(s))){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
       const r=await refreshSec(s); log.push({name:s.name,msg:r});
       if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push({name:s.name,msg:r}); await sleep(PROVIDER_GAP_MS); }
     DB.lastLog={at:new Date().toISOString(),rows:log};
@@ -849,6 +849,7 @@ function fillTickers(){
 const PROVIDER_GAP_MS=250;
 const PROVIDER_INFO='Aksjer hentes fra Yahoo Finance via mellomstasjonen – uten nøkkel og uten daglig grense: kurs, kurshistorikk og utbytte i ett oppslag. Fond (ISIN) og aksjer Yahoo ikke har, hentes fra EODHD. Gratis EODHD-nøkkel: registrer deg på eodhd.com og kopier «API token». Gratisnivået der gir 20 oppslag i døgnet.';
 const PROVIDER_KEY_LABEL='EODHD API token';
+const capDaily=()=>Math.max(1,parseInt(DB.settings.eodCap)||20);
 const DAILY_CAP=20;
 function dataReady(){ return !!DB.settings.apiKey; }
 const canFetch=()=>dataReady()||(!!DB.settings.proxy&&!DB.proxyOld);
@@ -860,12 +861,14 @@ function eodSymbol(s){
   const ex={NOK:'OL',USD:'US',SEK:'ST',DKK:'CO',EUR:'',GBP:'LSE'}[s.cur];
   return ex?`${t}.${ex}`:t;
 }
-function budget(){ const k=today(); DB.calls=DB.calls&&DB.calls.day===k?DB.calls:{day:k,n:0}; return DAILY_CAP-DB.calls.n; }
+function budget(){ const k=today(); DB.calls=DB.calls&&DB.calls.day===k?DB.calls:{day:k,n:0}; return capDaily()-DB.calls.n; }
+/* keep the counter in an open Datakilder sheet live */
+function showBudget(){ const e=document.getElementById('pbudget'); if(e) e.textContent=`${budget()} av ${capDaily()} EODHD-oppslag igjen i dag.`; }
 async function eod(path, params){
-  if(budget()<=0) throw new Error('dagens 20 oppslag er brukt opp – prøver igjen i morgen');
+  if(budget()<=0) throw new Error(`dagens ${capDaily()} EODHD-oppslag er brukt opp – prøver igjen i morgen`);
   const u=`${proxyBase('eodhd','https://eodhd.com')}/api/${path}?api_token=${encodeURIComponent(DB.settings.apiKey)}&fmt=json${params||''}`;
   let r; try{ r=await fetch(u); }catch(e){ throw new Error(DB.settings.proxy?'fikk ikke kontakt via mellomstasjonen – sjekk adressen':'EODHD tillater ikke kall rett fra nettleseren – sett opp mellomstasjonen under'); }
-  DB.calls.n++; save();
+  DB.calls.n++; save(); showBudget();
   const txt=await r.text();
   /* pass EODHD's own words along — they say exactly what's wrong (plan, ticker, quota) */
   const said=txt.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,140);
@@ -886,6 +889,8 @@ function yahooSymbol(s){
   return ex==null?'':t+ex;
 }
 const yahooReady=()=>!!DB.settings.proxy&&!DB.proxyOld;
+/* with a paid EODHD plan you can let EODHD go first; Yahoo then only fills gaps */
+const eodFirst=()=>DB.settings.prefer==='eodhd'&&dataReady();
 async function yahoo(s){
   const sym=yahooSymbol(s); if(!sym) throw new Error('ingen Yahoo-ticker');
   const first=DB.tx.filter(t=>t.secId===s.id).map(t=>t.date).sort()[0]||addDays(today(),-365);
@@ -913,11 +918,15 @@ async function yahoo(s){
   return {price, date:when, cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
 }
 async function getQuote(s){
+  if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!(yahooReady()&&yahooSymbol(s))) throw e; s.eodErr=e.message; } }
   if(yahooReady()&&yahooSymbol(s)){
     if(s.priceVia==='Yahoo'&&s.priceFetched===today()&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),src:'Yahoo'};
     try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
   }
-  if(!dataReady()) return null;
+  if(!dataReady()||eodFirst()) return null;
+  return getQuoteEod(s);
+}
+async function getQuoteEod(s){
   const sym=eodSymbol(s); if(!sym) return null;
   if(s.priceSrc==='EODHD'&&s.priceAt&&s.priceFetched===today()) return {price:s.price,date:s.priceAt.slice(0,10),src:'EODHD'};
   /* same single call as before, but reaching back to the first trade the first time,
@@ -932,7 +941,7 @@ async function getQuote(s){
 }
 async function getDividends(s){
   const c=DB.divCache[s.id];
-  if(c&&c.src==='Yahoo'&&c.at&&(Date.now()-new Date(c.at))<2*864e5) return c.items;   // came with today's price
+  if(c&&c.src==='Yahoo'&&c.at&&(Date.now()-new Date(c.at))<2*864e5&&!eodFirst()) return c.items;   // came with today's price
   if(c&&c.at&&(Date.now()-new Date(c.at))<6*864e5) return c.items;
   if(!dataReady()) return c?c.items:null;
   if(isFund(s)) return c?c.items:[];   // accumulating funds pay no dividends — save the quota for prices
@@ -964,7 +973,9 @@ function sourcesSheet(){
       <p class="tiny muted" style="margin:4px 0 10px">${PROVIDER_INFO}</p>
       <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL} (for fond)</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
-      ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0">${budget()} av ${DAILY_CAP} oppslag igjen i dag.${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
+      <div class="two" style="margin-top:10px"><div class="f" style="margin:0"><label for="pcap">EODHD-oppslag per dag</label><input id="pcap" inputmode="numeric" value="${esc(st.eodCap||20)}"><p class="hint">20 på gratisplanen. Med betalt plan: skriv grensen fra planen din.</p></div>
+        <div class="f" style="margin:0"><label>Aksjer hentes først fra</label><div class="seg" id="pprefer" style="margin:0"><button type="button" data-k="yahoo" aria-pressed="${st.prefer!=='eodhd'}">Yahoo</button><button type="button" data-k="eodhd" aria-pressed="${st.prefer==='eodhd'}">EODHD</button></div><p class="hint">Den andre brukes hvis den første ikke har aksjen.</p></div></div>
+      ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0"><span id="pbudget">${budget()} av ${capDaily()} EODHD-oppslag igjen i dag.</span>${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
       ${DB.lastLog&&DB.lastLog.rows?`<details style="margin-top:8px"><summary class="tiny" style="cursor:pointer;font-weight:650">Siste henting (${esc(prettyDate(DB.lastLog.at.slice(0,10)))})</summary>
         ${DB.lastLog.rows.map(r=>`<div class="tiny" style="padding:4px 0;border-top:1px solid var(--soft)"><b>${esc(r.name)}</b><br><span class="${/feil|avvist|ikke|fikk|fant ikke|brukt opp/i.test(r.msg)?'down':'muted'}">${esc(r.msg)}</span></div>`).join('')}</details>`:''}
       <button class="btn sm" id="pnow" style="margin-top:8px">Oppdater nå</button></div>
@@ -996,6 +1007,8 @@ function sourcesSheet(){
     try{ const r=await fetch(st.proxy+'/'); const tx=await r.text(); DB.proxyOld=r.ok&&!/v2/.test(tx); save();
       q('#pxres').textContent=!r.ok?'Svarte '+r.status+' – sjekk at koden er limt inn og deployet.':DB.proxyOld?'Svarer, men med gammel kode – lim inn ny kode (Kopier koden) og deploy.':'Mellomstasjonen svarer (v2). Trykk «Oppdater nå».'; }
     catch(e){ q('#pxres').textContent='Fikk ikke kontakt – sjekk adressen, og at koden er deployet.'; } };
+  q('#pcap').onchange=()=>{ st.eodCap=Math.max(1,parseInt(q('#pcap').value)||20); q('#pcap').value=st.eodCap; save(); showBudget(); toast('Lagret'); };
+  sh.querySelectorAll('#pprefer [data-k]').forEach(b=>b.onclick=()=>{ st.prefer=b.dataset.k; save(); sh.querySelectorAll('#pprefer [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); toast(b.dataset.k==='eodhd'?'EODHD brukes først':'Yahoo brukes først'); });
   q('#pnow').onclick=async()=>{ closeSheet(); await refreshAll(true); };
   q('#gsave').onclick=()=>{ st.gemKey=q('#gk').value.trim(); save(); toast('Lagret'); };
   q('#ptest').onclick=async()=>{ st.apiKey=q('#pk').value.trim(); save();
