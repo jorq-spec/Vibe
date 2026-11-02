@@ -485,10 +485,10 @@ async function addPending(list){
 let refreshing=false;
 async function refreshSec(s, verbose){
   if(!s.ticker) return 'Mangler ticker – legg den inn for å hente automatisk.';
-  if(!dataReady()) return 'Legg inn en API-nøkkel under Meny → Datakilder for å hente automatisk.';
+  if(!canFetch()) return 'Sett opp mellomstasjonen (og ev. EODHD-nøkkel) under Meny → Datakilder for å hente automatisk.';
   const msgs=[];
   try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
-      if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur}`); } else msgs.push('fant ingen kurs'); }
+      if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur} (${q.src||'auto'})`); } else msgs.push('fant ingen kurs'); }
   catch(e){ msgs.push('kurs: '+e.message); }
   try{ const d=await getDividends(s); if(d){ DB.divCache[s.id]={at:new Date().toISOString(),items:d}; msgs.push(`${d.length} utbytter i historikken`); } }
   catch(e){ msgs.push('utbytte: '+e.message); }
@@ -502,14 +502,14 @@ async function refreshAll(manual=true){
     await refreshFx();
     { const first=DB.tx.map(t=>t.date).sort()[0];
       if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }
-    if(!dataReady()){ if(manual) toast('Valutakurser oppdatert. Legg inn API-nøkkel under Meny → Datakilder for kurser og utbytte.'); return; }
+    if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=compute().pos;
     /* what you own now first, so the free daily quota goes where it matters */
     const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
-    for(const s of list){ if(typeof budget==='function'&&budget()<=0){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
+    for(const s of list){ if(!(yahooReady()&&yahooSymbol(s))&&dataReady()&&budget()<=0){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
       const r=await refreshSec(s); log.push({name:s.name,msg:r});
       if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push({name:s.name,msg:r}); await sleep(PROVIDER_GAP_MS); }
     DB.lastLog={at:new Date().toISOString(),rows:log};
@@ -813,7 +813,7 @@ function importPreview(sh, parsed, fname){
     });
     save(); closeSheet(); render();
     toast(`${n} transaksjoner importert`);
-    if(dataReady()) setTimeout(()=>refreshAll(true),300);
+    if(canFetch()) setTimeout(()=>refreshAll(true),300);
   };
 }
 
@@ -838,8 +838,8 @@ function fillTickers(){
   sh.querySelector('#ftsave').onclick=()=>{ let n=0;
     list.forEach((x,i)=>{ if(!sh.querySelector(`[data-i="${i}"]`).checked) return; const t=sh.querySelector(`[data-t="${i}"]`).value.trim().toUpperCase(); if(!t) return;
       x.s.ticker=t; if(!x.s.cur) x.s.cur='NOK'; n++; });
-    save(); closeSheet(); render(); toast(`${n} tickere lagt inn${dataReady()?' – henter kurser og utbytte':''}`);
-    if(dataReady()) setTimeout(()=>refreshAll(true),300); };
+    save(); closeSheet(); render(); toast(`${n} tickere lagt inn${canFetch()?' – henter kurser og utbytte':''}`);
+    if(canFetch()) setTimeout(()=>refreshAll(true),300); };
 }
 
 /* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
@@ -847,10 +847,11 @@ function fillTickers(){
    and currency, so 2020 Bulkers' USD dividends land in USD. The free plan is
    rationed, so prices refresh once a day and dividend history once a week. */
 const PROVIDER_GAP_MS=250;
-const PROVIDER_INFO='Kurser (sluttkurs forrige handelsdag) og utbytte hentes fra EODHD. Gratis nøkkel: registrer deg på eodhd.com og kopier «API token» fra kontosiden. Gratisnivået gir 20 oppslag i døgnet – appen sparer på dem: kurser én gang om dagen, utbyttehistorikk én gang i uka.';
+const PROVIDER_INFO='Aksjer hentes fra Yahoo Finance via mellomstasjonen – uten nøkkel og uten daglig grense: kurs, kurshistorikk og utbytte i ett oppslag. Fond (ISIN) og aksjer Yahoo ikke har, hentes fra EODHD. Gratis EODHD-nøkkel: registrer deg på eodhd.com og kopier «API token». Gratisnivået der gir 20 oppslag i døgnet.';
 const PROVIDER_KEY_LABEL='EODHD API token';
 const DAILY_CAP=20;
 function dataReady(){ return !!DB.settings.apiKey; }
+const canFetch=()=>dataReady()||(!!DB.settings.proxy&&!DB.proxyOld);
 /* EQNR + NOK → EQNR.OL, MSFT + USD → MSFT.US. A ticker with a dot is used as written. */
 function eodSymbol(s){
   const t=String(s.ticker||'').trim().toUpperCase(); if(!t) return '';
@@ -876,7 +877,47 @@ async function eod(path, params){
   if(!r.ok) throw new Error('EODHD svarte '+r.status+tail);
   try{ return JSON.parse(txt); }catch(e){ throw new Error('uventet svar'+tail); }
 }
+/* ---------- Yahoo Finance (through the user's worker) ---------- */
+function yahooSymbol(s){
+  const t=String(s.ticker||'').trim().toUpperCase(); if(!t||isFund(s)) return '';
+  if(/\.US$/.test(t)) return t.slice(0,-3);
+  if(t.includes('.')) return t.replace(/\.LSE$/,'.L');
+  const ex={NOK:'.OL',USD:'',SEK:'.ST',DKK:'.CO',GBP:'.L'}[s.cur];
+  return ex==null?'':t+ex;
+}
+const yahooReady=()=>!!DB.settings.proxy&&!DB.proxyOld;
+async function yahoo(s){
+  const sym=yahooSymbol(s); if(!sym) throw new Error('ingen Yahoo-ticker');
+  const first=DB.tx.filter(t=>t.secId===s.id).map(t=>t.date).sort()[0]||addDays(today(),-365);
+  const hd=Object.keys(s.hist||{}).sort();
+  const from=hd.length&&hd[0]<=addDays(first,3)?addDays(hd[hd.length-1],-7):addDays(first,-10);
+  const p1=Math.floor(parseYmd(from)/1000), p2=Math.floor(Date.now()/1000)+86400;
+  const u=`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?period1=${p1}&period2=${p2}&interval=1d&events=div`;
+  let r; try{ r=await fetch(u); }catch(e){ throw new Error('fikk ikke kontakt via mellomstasjonen'); }
+  const txt=await r.text();
+  if(/^Mellomstasjonen virker/.test(txt)&&!/v2/.test(txt)){ DB.proxyOld=true; save(); throw new Error('mellomstasjonen har gammel kode'); }
+  let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error('Yahoo svarte '+r.status); }
+  const res=j?.chart?.result?.[0];
+  if(!res){ const d=j?.chart?.error?.description||('Yahoo svarte '+r.status); throw new Error(/no data|not found|delisted/i.test(d)?`Yahoo kjenner ikke ${sym}`:d); }
+  const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
+  s.hist=s.hist||{};
+  const ymdUTC=x=>new Date(x*1000).toISOString().slice(0,10);
+  ts.forEach((x,i)=>{ if(cl[i]>0) s.hist[ymdUTC(x)]=Math.round(cl[i]*1e4)/1e4; });
+  const divs=Object.values(res.events?.dividends||{}).map(d=>({exDate:ymdUTC(d.date),payDate:'',amount:Number(d.amount),cur:(res.meta?.currency||s.cur||'NOK').toUpperCase()})).filter(d=>d.amount>0).sort((a,b)=>a.exDate.localeCompare(b.exDate));
+  /* keep what earlier, longer fetches found */
+  const old=(DB.divCache[s.id]||{}).items||[], seen=new Set(divs.map(d=>d.exDate));
+  DB.divCache[s.id]={at:new Date().toISOString(),src:'Yahoo',items:old.filter(d=>!seen.has(d.exDate)).concat(divs)};
+  const price=Number(res.meta?.regularMarketPrice)||Number(cl.filter(Boolean).pop());
+  const when=res.meta?.regularMarketTime?ymdUTC(res.meta.regularMarketTime):ymdUTC(ts[ts.length-1]);
+  s.priceFetched=today(); s.priceVia='Yahoo';
+  return {price, date:when, cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
+}
 async function getQuote(s){
+  if(yahooReady()&&yahooSymbol(s)){
+    if(s.priceVia==='Yahoo'&&s.priceFetched===today()&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),src:'Yahoo'};
+    try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
+  }
+  if(!dataReady()) return null;
   const sym=eodSymbol(s); if(!sym) return null;
   if(s.priceSrc==='EODHD'&&s.priceAt&&s.priceFetched===today()) return {price:s.price,date:s.priceAt.slice(0,10),src:'EODHD'};
   /* same single call as before, but reaching back to the first trade the first time,
@@ -890,8 +931,12 @@ async function getQuote(s){
   return {price:Number(last.close), date:last.date, src:'EODHD'};
 }
 async function getDividends(s){
+  const c=DB.divCache[s.id];
+  if(c&&c.src==='Yahoo'&&c.at&&(Date.now()-new Date(c.at))<2*864e5) return c.items;   // came with today's price
+  if(c&&c.at&&(Date.now()-new Date(c.at))<6*864e5) return c.items;
+  if(!dataReady()) return c?c.items:null;
+  if(isFund(s)) return c?c.items:[];   // accumulating funds pay no dividends — save the quota for prices
   const sym=eodSymbol(s); if(!sym) return null;
-  const c=DB.divCache[s.id]; if(c&&c.at&&(Date.now()-new Date(c.at))<6*864e5) return c.items;
   const first=DB.tx.filter(t=>t.secId===s.id).map(t=>t.date).sort()[0]||addDays(today(),-365);
   const rows=await eod(`div/${encodeURIComponent(sym)}`,`&from=${addDays(first,-5)}`);
   if(!Array.isArray(rows)) return null;
@@ -899,6 +944,9 @@ async function getDividends(s){
     .filter(d=>d.exDate&&d.amount>0);
 }
 async function testProvider(){
+  if(yahooReady()){ try{ const s={id:'_t',name:'Equinor',ticker:'EQNR',cur:'NOK'}; const q=await yahoo(s); delete DB.divCache._t;
+      return `Yahoo virker – Equinor ${nf(q.price,2)} kr.${dataReady()?` EODHD: ${budget()} oppslag igjen i dag.`:''}`; }
+    catch(e){ if(!dataReady()) throw e; } }
   const rows=await eod('eod/EQNR.OL',`&from=${addDays(today(),-12)}`);
   if(Array.isArray(rows)&&rows.length) return `Virker – Equinor ${nf(rows[rows.length-1].close,2)} kr (${prettyDate(rows[rows.length-1].date)}). ${budget()} oppslag igjen i dag.`;
   return 'Svar uten kurs – sjekk nøkkelen.';
@@ -907,20 +955,21 @@ async function testProvider(){
 /* EODHD (and possibly Norges Bank) won't answer a web page directly, so calls can
    go through the user's own small Cloudflare Worker. */
 function proxyBase(svc, direct){ const x=(DB.settings.proxy||'').trim().replace(/\/+$/,''); return x?`${x}/${svc}`:direct; }
-const WORKER_CODE="// Mellomstasjon for Portef\u00f8lje-appen (Cloudflare Worker).\n// Videresender bare til EODHD og Norges Bank, og bare for appen din.\nconst ALLOW_ORIGIN = 'https://jorq-spec.github.io';\nconst HOSTS = { eodhd: 'https://eodhd.com', nb: 'https://data.norges-bank.no' };\nconst cors = {\n  'Access-Control-Allow-Origin': ALLOW_ORIGIN,\n  'Access-Control-Allow-Methods': 'GET, OPTIONS',\n  'Access-Control-Allow-Headers': '*',\n};\nexport default {\n  async fetch(req) {\n    if (req.method === 'OPTIONS') return new Response(null, { headers: cors });\n    const origin = req.headers.get('Origin');\n    if (origin && origin !== ALLOW_ORIGIN) return new Response('Ikke tillatt', { status: 403 });\n    const url = new URL(req.url);\n    const [, svc, ...rest] = url.pathname.split('/');\n    if (!HOSTS[svc]) return new Response('Mellomstasjonen virker.', { status: 200, headers: cors });\n    const r = await fetch(HOSTS[svc] + '/' + rest.join('/') + url.search, {\n      headers: { 'User-Agent': 'portefolje-app' },\n      cf: { cacheTtl: 1800, cacheEverything: true },\n    });\n    const h = new Headers(r.headers);\n    for (const [k, v] of Object.entries(cors)) h.set(k, v);\n    return new Response(r.body, { status: r.status, headers: h });\n  },\n};\n";
+const WORKER_CODE="// Mellomstasjon for Portef\u00f8lje-appen (Cloudflare Worker) \u2013 v2\n// Videresender bare til EODHD, Yahoo Finance og Norges Bank, og bare for appen din.\nconst ALLOW_ORIGIN = 'https://jorq-spec.github.io';\nconst HOSTS = {\n  eodhd: 'https://eodhd.com',\n  nb: 'https://data.norges-bank.no',\n  yahoo: 'https://query1.finance.yahoo.com',\n  yahoo2: 'https://query2.finance.yahoo.com',\n};\nconst cors = {\n  'Access-Control-Allow-Origin': ALLOW_ORIGIN,\n  'Access-Control-Allow-Methods': 'GET, OPTIONS',\n  'Access-Control-Allow-Headers': '*',\n};\nexport default {\n  async fetch(req) {\n    if (req.method === 'OPTIONS') return new Response(null, { headers: cors });\n    const origin = req.headers.get('Origin');\n    if (origin && origin !== ALLOW_ORIGIN) return new Response('Ikke tillatt', { status: 403 });\n    const url = new URL(req.url);\n    const [, svc, ...rest] = url.pathname.split('/');\n    if (!HOSTS[svc]) return new Response('Mellomstasjonen virker. v2', { status: 200, headers: cors });\n    const ua = svc.startsWith('yahoo')\n      ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36'\n      : 'portefolje-app';\n    const r = await fetch(HOSTS[svc] + '/' + rest.join('/') + url.search, {\n      headers: { 'User-Agent': ua, 'Accept': 'application/json,text/plain,*/*' },\n      cf: { cacheTtl: 1800, cacheEverything: true },\n    });\n    const h = new Headers(r.headers);\n    for (const [k, v] of Object.entries(cors)) h.set(k, v);\n    h.delete('set-cookie');\n    return new Response(r.body, { status: r.status, headers: h });\n  },\n};\n";
 /* ---------- Settings sheet for keys ---------- */
 function sourcesSheet(){
   const st=DB.settings;
   const sh=openSheet(`<h3>Datakilder</h3><p class="sub">Nøklene lagres bare på denne enheten, og de blir med i backupen.</p>
     <div class="card"><b>Kurser og utbytte</b>
       <p class="tiny muted" style="margin:4px 0 10px">${PROVIDER_INFO}</p>
-      <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL}</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
+      <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL} (for fond)</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
       ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0">${budget()} av ${DAILY_CAP} oppslag igjen i dag.${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
       ${DB.lastLog&&DB.lastLog.rows?`<details style="margin-top:8px"><summary class="tiny" style="cursor:pointer;font-weight:650">Siste henting (${esc(prettyDate(DB.lastLog.at.slice(0,10)))})</summary>
         ${DB.lastLog.rows.map(r=>`<div class="tiny" style="padding:4px 0;border-top:1px solid var(--soft)"><b>${esc(r.name)}</b><br><span class="${/feil|avvist|ikke|fikk|fant ikke|brukt opp/i.test(r.msg)?'down':'muted'}">${esc(r.msg)}</span></div>`).join('')}</details>`:''}
       <button class="btn sm" id="pnow" style="margin-top:8px">Oppdater nå</button></div>
-    <div class="card"><b>Mellomstasjon</b>
+    <div class="card"${DB.proxyOld?' style="border-color:var(--warn)"':''}><b>Mellomstasjon</b>
+      ${DB.proxyOld?'<p class="tiny" style="margin:4px 0 8px;color:var(--warn);font-weight:650">Ny kode trengs for Yahoo: trykk «Kopier koden», lim inn i Cloudflare (Edit code → slett alt → lim inn → Deploy), og trykk Lagre her.</p>':''}
       <p class="tiny muted" style="margin:4px 0 10px">EODHD svarer ikke en nettside direkte. En gratis Cloudflare Worker henter dataene for appen. Den tar ca. 5 minutter å sette opp og brukes bare av deg.</p>
       <div class="f" style="margin-bottom:8px"><label for="px">Adresse til mellomstasjonen</label><input id="px" value="${esc(st.proxy||'')}" placeholder="https://noe.dittnavn.workers.dev" autocomplete="off" inputmode="url"></div>
       <div class="row" style="flex-wrap:wrap"><button class="btn sm" id="pxsave">Lagre</button><button class="btn sm" id="pxhow">Slik setter du den opp</button><button class="btn sm" id="pxcopy">Kopier koden</button></div>
@@ -944,7 +993,8 @@ function sourcesSheet(){
   q('#pxsave').onclick=async()=>{ let v=q('#px').value.trim(); if(v&&!/^https?:\/\//.test(v)) v='https://'+v; st.proxy=v.replace(/\/+$/,''); q('#px').value=st.proxy; save();
     if(!st.proxy){ q('#pxres').textContent='Fjernet'; return; }
     q('#pxres').innerHTML='<span class="spin"></span> Sjekker…';
-    try{ const r=await fetch(st.proxy+'/'); q('#pxres').textContent=r.ok?'Mellomstasjonen svarer. Trykk «Lagre og test» over.':'Svarte '+r.status+' – sjekk at koden er limt inn og deployet.'; }
+    try{ const r=await fetch(st.proxy+'/'); const tx=await r.text(); DB.proxyOld=r.ok&&!/v2/.test(tx); save();
+      q('#pxres').textContent=!r.ok?'Svarte '+r.status+' – sjekk at koden er limt inn og deployet.':DB.proxyOld?'Svarer, men med gammel kode – lim inn ny kode (Kopier koden) og deploy.':'Mellomstasjonen svarer (v2). Trykk «Oppdater nå».'; }
     catch(e){ q('#pxres').textContent='Fikk ikke kontakt – sjekk adressen, og at koden er deployet.'; } };
   q('#pnow').onclick=async()=>{ closeSheet(); await refreshAll(true); };
   q('#gsave').onclick=()=>{ st.gemKey=q('#gk').value.trim(); save(); toast('Lagret'); };
