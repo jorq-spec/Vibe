@@ -502,6 +502,8 @@ async function refreshAll(manual=true){
     await refreshFx();
     { const first=DB.tx.map(t=>t.date).sort()[0];
       if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }
+    /* a worker flagged as old may have been updated since — check again (cheap, no quota) */
+    if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetch(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=compute().pos;
     /* what you own now first, so the free daily quota goes where it matters */
@@ -518,7 +520,7 @@ async function refreshAll(manual=true){
     save();
     const why=fail.length?fail[0].msg.replace(/^kurs: /,''):'';
     if(manual||(!ok&&fail.length)) toast(ok?`Oppdatert ${ok}`+(fail.length?` · ${fail.length} feilet (se Meny → Datakilder)`:'')+(later?` · ${later} hentes i morgen`:'')
-      :`Fikk ikke oppdatert: ${why}`);
+      :fail.length?`Fikk ikke oppdatert: ${why}`:later?`Dagens EODHD-oppslag er brukt opp – ${later} hentes i morgen${DB.proxyOld?'. Oppdater koden i mellomstasjonen for å bruke Yahoo':''}`:'Ingenting å oppdatere');
   } finally { refreshing=false; render(); }
 }
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
