@@ -1351,11 +1351,13 @@ function accountsSheet(){
     ${DB.accounts.map((a,i)=>`<div class="card" style="padding:10px 12px"><div class="row"><div style="flex:1"><b>${esc(a.name)}</b> ${a.type==='ask'?'<span class="tag ask">ASK</span>':'<span class="tag">Ordinær</span>'}
         ${C.cash&&Math.abs(C.cash.byAcc[a.id]||0)>=1?`<div class="tiny muted">Kontanter ${kr(C.cash.byAcc[a.id])}</div>`:''}</div>
       <button class="btn sm" data-ren="${i}">Endre</button>${DB.accounts.length>1?`<button class="btn sm danger" data-del="${i}">✕</button>`:''}</div>
+      ${a.cash!=='out'&&C.cash?`<button class="btn sm full" style="margin-top:8px" data-setcash="${a.id}">Kontanter: ${kr(C.cash.byAcc[a.id]||0)} – sett riktig beløp</button>`:''}
       <div class="seg" style="margin:10px 0 0" data-cashacc="${a.id}"><button type="button" data-k="keep" aria-pressed="${a.cash!=='out'}">Salg blir kontanter</button><button type="button" data-k="out" aria-pressed="${a.cash==='out'}">Utbetales til bank</button></div></div>`).join('')}
     <p class="note" style="margin:-2px 2px 12px">«Salg blir kontanter»: penger fra salg og utbytte står på kontoen og brukes først ved neste kjøp, slik at grafen ikke ser dem som nye innskudd. Velg «Utbetales til bank» der pengene går ut av kontoen, f.eks. fond hos KLP.</p>
     <div class="card"><div class="f"><label for="an">Ny konto</label><input id="an" placeholder="f.eks. ASK hos Nordnet"></div>
       <div class="seg" id="at" style="margin-bottom:10px"><button type="button" data-k="ord" aria-pressed="true">Ordinær</button><button type="button" data-k="ask" aria-pressed="false">Aksjesparekonto</button></div>
       <button class="btn full" id="aadd">Legg til konto</button></div>`);
+  sh.querySelectorAll('[data-setcash]').forEach(b=>b.onclick=()=>cashAdjustSheet(b.dataset.setcash));
   sh.querySelectorAll('[data-cashacc] [data-k]').forEach(b=>b.onclick=()=>{ const a=acc(b.closest('[data-cashacc]').dataset.cashacc); a.cash=b.dataset.k; save(); render(); accountsSheet(); });
   let typ='ord';
   sh.querySelectorAll('#at [data-k]').forEach(b=>b.onclick=()=>{ typ=b.dataset.k; sh.querySelectorAll('#at [data-k]').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
@@ -1369,6 +1371,21 @@ function accountsSheet(){
     if(!confirmBox(`Slette ${a.name}?`)) return; DB.accounts.splice(+b.dataset.del,1); save(); render(); accountsSheet(); });
 }
 
+/* Tell the app what's actually on the account; the gap is booked as a deposit or a
+   withdrawal today, so history stays intact and the total matches the bank. */
+function cashAdjustSheet(accId){
+  const a=acc(accId); if(!a) return; const now=compute().cash?.byAcc[accId]||0;
+  const sh=openSheet(`<h3>Kontanter på ${esc(a.name)}</h3><p class="sub">Appen regner med ${kr(now,2)}. Skriv inn det som faktisk står på kontoen i dag, så føres forskjellen som et uttak eller innskudd.</p>
+    <div class="f"><label for="cashv">Kontanter nå (kr)</label><input id="cashv" inputmode="decimal" placeholder="f.eks. 0 eller 2 350"></div>
+    <p class="hint" id="cashh" style="margin:-4px 2px 12px"></p>
+    <button class="btn solid full" id="cashgo">Lagre</button>`);
+  const v=sh.querySelector('#cashv'), h=sh.querySelector('#cashh'); setTimeout(()=>v.focus(),120);
+  v.oninput=()=>{ const x=num(v.value); h.textContent=isNaN(x)?'':Math.abs(x-now)<0.01?'Stemmer allerede.':x<now?`Føres som uttak på ${kr(now-x,2)}.`:`Føres som innskudd på ${kr(x-now,2)}.`; };
+  sh.querySelector('#cashgo').onclick=()=>{ const x=num(v.value); if(isNaN(x)||x<0){ v.classList.add('bad'); return toast('Skriv inn et beløp'); }
+    const diff=Math.round((x-now)*100)/100; if(Math.abs(diff)<0.01){ closeSheet(); return toast('Stemmer allerede'); }
+    DB.tx.push({id:uid(),created:Date.now(),type:diff>0?'dep':'wd',date:today(),accId,amount:String(Math.abs(diff)),cur:'NOK',secId:'',note:'Justering av kontanter'});
+    save(); closeSheet(); render(); toast(`Kontanter satt til ${kr(x)}`); };
+}
 function menuSheet(){
   const sh=openSheet(`<h3>Meny</h3><p class="sub">Alt lagres bare på denne enheten. Ta backup innimellom.</p>
     <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
