@@ -620,7 +620,7 @@ function dailySeries(){
 /* ---------- Neon chart ---------- */
 const NEON={bg:'#070B14', grid:'rgba(120,160,255,.10)', axis:'#5D6C8C', a:'#22F5D0', b:'#FF4FD8', c:'#FFD23F', up:'#39FF88', down:'#FF4F6D'};
 let chartRange='1Å';
-const RANGES=[['1M',31],['3M',92],['6M',183],['1Å',366],['3Å',1096],['Alt',99999]];
+const RANGES=[['1D',1],['1U',7],['1M',31],['3M',92],['6M',183],['1Å',366],['3Å',1096],['Alt',99999]];
 function neonDefs(id){
   return `<defs>
     <filter id="g${id}" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
@@ -628,17 +628,54 @@ function neonDefs(id){
   </defs>`;
 }
 const compact=v=>{ const a=Math.abs(v); return a>=1e6?nf(v/1e6,1)+' M':a>=1e4?nf(v/1e3,0)+'k':a>=1e3?nf(v/1e3,1)+'k':nf(v,0); };
+/* ---------- Intraday (1D / 1U) from Yahoo: what you own today, priced through the day ---------- */
+const INTRA={'1D':{range:'1d',interval:'5m'},'1U':{range:'5d',interval:'30m'}};
+let intraCache={}, intraLoading=null;
+async function loadIntraday(rk){
+  const spec=INTRA[rk]; const C=compute(), P=Object.values(C.pos); const bucket=Math.floor(Date.now()/3e5);
+  const series=[]; let ok=0;
+  for(const p of P){ const s=sec(p.secId), sym=yahooReady()?yahooSymbol(s):'';
+    const fx=s.cur==='NOK'?1:(fxNow(s.cur)||1);
+    if(!sym){ series.push({q:p.qty*fx, pts:[], flat:num(s.price)||p.avg}); continue; }
+    try{ const r=await fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${bucket}`);
+      const j=await r.json(), res=j?.chart?.result?.[0]; if(!res) throw 0;
+      const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
+      const pts=ts.map((t,i)=>[t*1000,cl[i]]).filter(x=>x[1]>0);
+      const prev=Number(res.meta?.chartPreviousClose||res.meta?.previousClose)||0;
+      if(rk==='1D'&&prev&&pts.length) pts.unshift([pts[0][0]-60e3,prev]);
+      series.push({q:p.qty*fx, pts, flat:num(s.price)||p.avg}); ok++;
+    }catch(e){ series.push({q:p.qty*fx, pts:[], flat:num(s.price)||p.avg}); }
+  }
+  const times=[...new Set(series.flatMap(x=>x.pts.map(p=>p[0])))].sort((a,b)=>a-b);
+  const cash=C.cash?C.cash.total:0, inv=C.cash?C.cash.deposited:P.reduce((a,p)=>a+p.cost,0);
+  const idx=series.map(()=>0), last=series.map(x=>x.pts.length?x.pts[0][1]:x.flat);
+  const out=times.map(t=>{ let v=cash; series.forEach((x,k)=>{ while(idx[k]<x.pts.length&&x.pts[idx[k]][0]<=t){ last[k]=x.pts[idx[k]][1]; idx[k]++; } v+=x.q*last[k]; });
+    const d=new Date(t); return {d:ymd(d), t, value:v, invested:inv, events:[], label:rk==='1D'?`${pad(d.getHours())}:${pad(d.getMinutes())}`:`${['søn','man','tir','ons','tor','fre','lør'][d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`}; });
+  intraCache[rk+'|'+scope()]={at:Date.now(), pts:out, ok};
+  return out;
+}
+function intradayPts(rk){
+  const c=intraCache[rk+'|'+scope()];
+  if(c&&Date.now()-c.at<5*60e3) return c.pts;
+  if(!intraLoading&&yahooReady()) intraLoading=loadIntraday(rk).catch(()=>null).finally(()=>{ intraLoading=null; if(view==='home') render(); });
+  return c?c.pts:null;
+}
 function valueChart(){
   const S=dailySeries(); if(S.days.length<2) return '';
-  const days=Math.min(S.days.length, RANGES.find(r=>r[0]===chartRange)[1]);
-  const pts=S.days.slice(-days);
+  let pts, intra=false;
+  if(INTRA[chartRange]&&yahooReady()){ pts=intradayPts(chartRange); intra=true;
+    if(!pts||pts.length<2) return `<div class="neon"><div class="nlbl">${chartRange==='1D'?'I dag':'Siste uke'}</div><p class="nnote" style="margin:14px 2px"><span class="spin"></span> Henter kurser gjennom dagen…</p>
+      <div class="nchips">${RANGES.map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join('')}</div></div>`; }
+  else { const days=Math.min(S.days.length, RANGES.find(r=>r[0]===chartRange)[1]+1); pts=S.days.slice(-days); }
+  window._vpts=pts;
   const W=360,H=190,L=8,R=8,T=14,B=22;
-  const vals=pts.flatMap(p=>[p.value,p.invested]); let lo=Math.min(...vals), hi=Math.max(...vals); if(hi-lo<1){ hi+=1; lo-=1; } const pad=(hi-lo)*.08; lo-=pad; hi+=pad;
+  const vals=intra?pts.map(p=>p.value):pts.flatMap(p=>[p.value,p.invested]); let lo=Math.min(...vals), hi=Math.max(...vals); if(hi-lo<1){ hi+=1; lo-=1; } const pad=(hi-lo)*.08; lo-=pad; hi+=pad;
+  window._vscale=[lo,hi];
   const x=i=>L+i*(W-L-R)/Math.max(1,pts.length-1), y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
   const line=k=>pts.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)} ${y(p[k]).toFixed(1)}`).join('');
   const area=`${line('value')}L${x(pts.length-1)} ${H-B}L${x(0)} ${H-B}Z`;
   const grid=[0,1,2,3].map(k=>{ const v=lo+(hi-lo)*k/3, yy=y(v); return `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="${NEON.grid}"/><text x="${W-R}" y="${yy-3}" text-anchor="end" font-size="9.5" fill="${NEON.axis}">${compact(v)}</text>`; }).join('');
-  const lab=[0,Math.floor(pts.length/2),pts.length-1].map(i=>`<text x="${x(i)}" y="${H-6}" text-anchor="${i===0?'start':i===pts.length-1?'end':'middle'}" font-size="9.5" fill="${NEON.axis}">${esc(prettyDate(pts[i].d).replace(/ \d{4}$/,m=>pts.length>200?m:''))}</text>`).join('');
+  const lab=[0,Math.floor(pts.length/2),pts.length-1].map(i=>`<text x="${x(i)}" y="${H-6}" text-anchor="${i===0?'start':i===pts.length-1?'end':'middle'}" font-size="9.5" fill="${NEON.axis}">${esc(pts[i].label||prettyDate(pts[i].d).replace(/ \d{4}$/,m=>pts.length>200?m:''))}</text>`).join('');
   const first=pts[0], last=pts[pts.length-1];
   const ret=last.value-first.value-(last.invested-first.invested), base=first.value||last.invested||1;
   return `<div class="neon">
@@ -646,16 +683,18 @@ function valueChart(){
       <div style="text-align:right"><div class="nlbl">${esc(chartRange)}</div><div class="num" style="color:${ret>=0?NEON.up:NEON.down};font-weight:700;text-shadow:0 0 10px currentColor">${sgn(ret)} kr</div><div class="num tiny" style="color:${ret>=0?NEON.up:NEON.down}">${pct(ret/base*100)}</div></div></div>
     <svg viewBox="0 0 ${W} ${H}" class="nsvg" data-chart="value">${neonDefs('v')}${grid}
       <path d="${area}" fill="url(#fav)"/>
-      <path d="${line('invested')}" fill="none" stroke="${NEON.b}" stroke-width="1.6" stroke-dasharray="4 4" filter="url(#gv)" opacity=".85"/>
+      ${intra?'':`<path d="${line('invested')}" fill="none" stroke="${NEON.b}" stroke-width="1.6" stroke-dasharray="4 4" filter="url(#gv)" opacity=".85"/>`}
       <path d="${line('value')}" fill="none" stroke="${NEON.a}" stroke-width="2.2" stroke-linejoin="round" filter="url(#gv)"/>
-      ${marks(pts,x,y)}
+      ${intra?'':marks(pts,x,y)}
       <circle cx="${x(pts.length-1)}" cy="${y(last.value)}" r="3.6" fill="${NEON.a}" filter="url(#gv)"/>
       ${lab}<g class="scrub" style="display:none"><line y1="${T}" y2="${H-B}" stroke="#fff" stroke-opacity=".35"/><circle r="4" fill="${NEON.a}"/></g></svg>
     <div class="nread tiny num" id="nread">&nbsp;</div>
-    <div class="nlegend"><span><i style="background:${NEON.a}"></i>Markedsverdi</span><span><i style="background:${NEON.b}"></i>Netto satt inn</span></div>
-    <div class="nmarks">${[['buy','▲ Kjøp',NEON.up],['sell','▼ Salg',NEON.down],['div','● Utbytte',NEON.c]].map(([k,l,c])=>`<button data-act="mark" data-k="${k}" aria-pressed="${!!markOpts()[k]}" style="--mc:${c}">${l}</button>`).join('')}</div>
+    ${intra?'':`<div class="nlegend"><span><i style="background:${NEON.a}"></i>Markedsverdi</span><span><i style="background:${NEON.b}"></i>Netto satt inn</span></div>`}
+    ${intra?'':`<div class="nmarks">${[['buy','▲ Kjøp',NEON.up],['sell','▼ Salg',NEON.down],['div','● Utbytte',NEON.c]].map(([k,l,c])=>`<button data-act="mark" data-k="${k}" aria-pressed="${!!markOpts()[k]}" style="--mc:${c}">${l}</button>`).join('')}</div>`}
     <div class="nchips">${RANGES.map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join('')}</div>
-    ${!S.hasHist?`<p class="nnote">Kurve mellom handlene fylles ut når appen har hentet kurshistorikk (via mellomstasjonen). Til da brukes kursen ved hver handel.</p>`:''}
+    ${intra?`<p class="nnote">Det du eier i dag, priset gjennom ${chartRange==='1D'?'dagen':'uka'} (Yahoo, ca. 15 min forsinket). Fond holdes på siste kjente kurs.</p>`:''}
+    ${INTRA[chartRange]&&!yahooReady()?`<p class="nnote">Kurser gjennom dagen krever mellomstasjonen med Yahoo. Viser sluttkurser i stedet.</p>`:''}
+    ${!S.hasHist&&!intra?`<p class="nnote">Kurve mellom handlene fylles ut når appen har hentet kurshistorikk (via mellomstasjonen). Til da brukes kursen ved hver handel.</p>`:''}
   </div>`;
 }
 const markOpts=()=>Object.assign({buy:true,sell:true,div:false},DB.settings.marks||{});
@@ -696,14 +735,15 @@ function sparkline(s){
 document.addEventListener('pointermove',scrub); document.addEventListener('pointerdown',scrub);
 function scrub(e){
   const svg=e.target.closest&&e.target.closest('svg[data-chart=value]'); if(!svg) return;
-  const S=dailySeries(); const days=Math.min(S.days.length, RANGES.find(r=>r[0]===chartRange)[1]); const pts=S.days.slice(-days);
+  const pts=window._vpts||[]; if(pts.length<2) return;
   const r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal, fx=(e.clientX-r.left)/r.width*vb.width;
   const i=Math.max(0,Math.min(pts.length-1,Math.round((fx-8)/(vb.width-16)*(pts.length-1)))), p=pts[i];
-  const vals=pts.flatMap(q=>[q.value,q.invested]); let lo=Math.min(...vals), hi=Math.max(...vals); if(hi-lo<1){hi+=1;lo-=1;} const pd=(hi-lo)*.08; lo-=pd; hi+=pd;
+  const [lo,hi]=window._vscale||[0,1];
   const x=8+i*(vb.width-16)/Math.max(1,pts.length-1), y=14+(hi-p.value)/(hi-lo)*(vb.height-36);
   const g=svg.querySelector('.scrub'); g.style.display=''; g.querySelector('line').setAttribute('x1',x); g.querySelector('line').setAttribute('x2',x);
   g.querySelector('circle').setAttribute('cx',x); g.querySelector('circle').setAttribute('cy',y);
   const ev=p.events.filter(t=>!isCashTx(t)).map(t=>`${TYPES[t.type].toLowerCase()} ${esc(sec(t.secId)?.name||'')}`).slice(0,3).join(', ');
+  if(p.label&&p.t){ const rd=document.getElementById('nread'); const f=pts[0].value; if(rd) rd.innerHTML=`${esc(p.label)} · <b>${kr(p.value)}</b> · <span style="color:${p.value-f>=0?NEON.up:NEON.down}">${sgn(p.value-f)} kr</span> siden start`; return; }
   const rd=document.getElementById('nread'); if(rd) rd.innerHTML=`${esc(prettyDate(p.d))} · <b>${kr(p.value)}</b> · innskutt ${kr(p.invested)} · <span style="color:${p.value-p.invested>=0?NEON.up:NEON.down}">${sgn(p.value-p.invested)} kr</span>${p.cash?` · kontanter ${kr(p.cash)}`:''}${ev?`<br>${ev}`:''}`;
 }
 
@@ -1244,7 +1284,7 @@ function viewHold(C){
   if(!P.length&&!closed.length&&!(C.cash&&C.cash.total)) return `<div class="empty"><h3>Ingenting her ennå</h3><p>Aksjene dukker opp når du legger inn et kjøp.</p></div>`;
   const row=(s,p)=>{ const d12=divLast12(C,s.id);
     return `<button class="item" data-act="opensec" data-id="${s.id}">
-      <div class="b"><b>${esc(s.name)}</b><span>${isFund(s)?'<span class="tag">Fond</span> ':''}${p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'} · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
+      <div class="b"><b>${esc(s.name)}</b><span>${isFund(s)?'<span class="tag">Fond</span> ':''}${p?`${qf(p.qty)} ${isFund(s)?'andeler':'stk'}${num(s.price)>0?` · kurs <b style="display:inline;font-size:inherit;color:var(--ink)">${nf(num(s.price),2)}</b>`:''} · snitt ${nf(p.avg,2)} kr`:'Solgt ut'}${s.ticker?' · '+esc(s.ticker):''}${s.cur!=='NOK'?' · '+s.cur:''}</span></div>
       <div class="r">${p?`<b class="num">${kr(p.value??p.cost)}</b><span class="num ${cls(p.unreal)}">${p.unreal!=null?pct(p.unreal/p.cost*100):'mangler kurs'}</span>`:`<span class="num ${cls(realOf(C,s.id))}">${sgn(realOf(C,s.id))} kr</span>`}${d12?`<span class="tiny muted num">utb. ${nf(d12)} kr/år</span>`:''}</div></button>`; };
   const closedS=closed.filter(s=>inScope(s.id));
   const noTick=DB.secs.filter(s=>!s.ticker&&!isFund(s)&&tickerGuess(s.name));
