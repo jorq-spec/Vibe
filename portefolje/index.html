@@ -908,7 +908,8 @@ function divEvents(C){
       out.push({kind:'est', date:pay, exDate:ex, secId:sid, perShare:b.amount, cur:b.cur, amount:p.qty*b.amount*fx(b.cur), note:`anslag ut fra ${prettyDate(b.exDate)}`});
     });
   }
-  return out.filter(e=>inScope(e.secId)).sort((a,b)=>a.date.localeCompare(b.date));
+  /* estimates only when asked for — confirmed dividends are the default */
+  return out.filter(e=>inScope(e.secId)&&(e.kind!=='est'||DB.settings.dcEst)).sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 function viewDivCal(C){
@@ -929,10 +930,10 @@ function viewDivCal(C){
     return out+`<text x="${8+i*bw+bw/2}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="${NEON.axis}">${MON[+k.slice(5)-1].slice(0,1).toUpperCase()}</text>`; }).join('');
   const head=`<div class="neon">
     <div class="spread"><div><div class="nlbl">${dcMode==='ahead'?'Neste 12 måneder':'Siste 12 måneder'}</div><div class="nbig num">${kr(tot)}</div></div>
-      <div style="text-align:right" class="tiny num">${dcMode==='ahead'?`${rec?`<div style="color:${DC.rec}">mottatt ${kr(rec)}</div>`:''}${ann?`<div style="color:${DC.ann}">annonsert ${kr(ann)}</div>`:''}<div style="color:${DC.est}">anslag ${kr(est)}</div>`:`<div style="color:${DC.rec}">mottatt</div>`}</div></div>
+      <div style="text-align:right" class="tiny num">${dcMode==='ahead'?`${!rec&&!ann&&!DB.settings.dcEst?`<div style="color:${NEON.axis}">bare bekreftede</div>`:''}${rec?`<div style="color:${DC.rec}">mottatt ${kr(rec)}</div>`:''}${ann?`<div style="color:${DC.ann}">annonsert ${kr(ann)}</div>`:''}${DB.settings.dcEst?`<div style="color:${DC.est}">anslag ${kr(est)}</div>`:''}`:`<div style="color:${DC.rec}">mottatt</div>`}</div></div>
     <svg viewBox="0 0 ${W} ${H}" class="nsvg"><defs><filter id="gdc" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>${bars}</svg>
-    <div class="nlegend"><span><i style="background:${DC.rec}"></i>Mottatt</span>${dcMode==='ahead'?`<span><i style="background:${DC.ann}"></i>Annonsert</span><span><i style="background:${DC.est}"></i>Anslag</span>`:''}</div>
-    <div class="nchips"><button data-act="dcmode" data-k="ahead" aria-pressed="${dcMode==='ahead'}">Fremover</button><button data-act="dcmode" data-k="back" aria-pressed="${dcMode==='back'}">Bakover</button></div></div>`;
+    <div class="nlegend"><span><i style="background:${DC.rec}"></i>Mottatt</span>${dcMode==='ahead'?`<span><i style="background:${DC.ann}"></i>Annonsert</span>${DB.settings.dcEst?`<span><i style="background:${DC.est}"></i>Anslag</span>`:''}`:''}</div>
+    <div class="nchips"><button data-act="dcmode" data-k="ahead" aria-pressed="${dcMode==='ahead'}">Fremover</button><button data-act="dcmode" data-k="back" aria-pressed="${dcMode==='back'}">Bakover</button>${dcMode==='ahead'?`<button data-act="dcest" aria-pressed="${!!DB.settings.dcEst}" style="${DB.settings.dcEst?'color:#FFD23F;border-color:#FFD23F;box-shadow:0 0 10px rgba(255,210,63,.35)':''}">Anslag</button>`:''}</div></div>`;
   const list=months.map(k=>{ const L=inM(k); if(!L.length) return '';
     const [y,m]=k.split('-');
     return `<h2 class="sec spread"><span>${MONL[+m-1]} ${y}</span><span class="num">${kr(sum(L))}</span></h2>`+L.map(e=>{ const s=sec(e.secId);
@@ -940,8 +941,8 @@ function viewDivCal(C){
       return `<div class="item" style="cursor:default${e.kind==='est'?';border-style:dashed':''}"><div class="b"><b>${esc(s?.name||'?')}</b><span>${esc(prettyDate(e.date))}${e.perShare?` · ${nf(e.perShare,4).replace(/,?0+$/,'')} ${e.cur}/aksje`:''}${e.note?' · '+esc(e.note):''}</span></div>
         <div class="r"><b class="num">${e.kind==='est'?'≈ ':''}${kr(e.amount)}</b>${tag}</div></div>`; }).join(''); }).join('');
   const hasData=Object.values(DB.divCache).some(c=>(c.items||[]).length)||C.divs.length;
-  return head+(list||`<div class="empty"><p>${hasData?'Ingen utbytter i denne perioden.':'Når kursene hentes, kommer utbyttehistorikken med, og da fylles kalenderen. Du kan også føre utbytter selv.'}</p></div>`)
-    +(dcMode==='ahead'?`<p class="note">Anslag er fjorårets utbytter gjentatt for det du eier i dag. Selskapene kan endre eller kutte utbyttet, så tallene er bare en pekepinn. Utbetalingsdato er anslått til ca. to uker etter eks-dato når den ikke er kjent.</p>`:'');
+  return head+(list||`<div class="empty"><p>${hasData?(dcMode==='ahead'&&!DB.settings.dcEst?'Ingen bekreftede utbytter fremover ennå. Trykk «Anslag» for å se hva du kan forvente ut fra fjoråret.':'Ingen utbytter i denne perioden.'):'Når kursene hentes, kommer utbyttehistorikken med, og da fylles kalenderen. Du kan også føre utbytter selv.'}</p></div>`)
+    +(dcMode==='ahead'&&DB.settings.dcEst?`<p class="note">Anslag er fjorårets utbytter gjentatt for det du eier i dag. Selskapene kan endre eller kutte utbyttet, så tallene er bare en pekepinn. Utbetalingsdato er anslått til ca. to uker etter eks-dato når den ikke er kjent.</p>`:'');
 }
 
 /* ---------- Prices and dividends: EODHD (free key: 20 calls a day) ----------
@@ -1145,7 +1146,7 @@ function render(){
   else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}${SC}`); A.innerHTML=scopeBar()+viewHold(C); }
   else if(view==='cal'){ T.innerHTML=topbar('Kalender','Endring per dag'+SC); A.innerHTML=scopeBar()+viewCal(); }
   else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.filter(t=>inScope(t.secId)).length} totalt${SC}`); A.innerHTML=scopeBar()+viewTx(C); }
-  else if(view==='divcal'){ T.innerHTML=topbar('Utbyttekalender', 'Mottatt, annonsert og anslått'+SC); A.innerHTML=scopeBar()+viewDivCal(C); }
+  else if(view==='divcal'){ T.innerHTML=topbar('Utbyttekalender', (DB.settings.dcEst?'Bekreftet og anslått':'Bekreftede utbytter')+SC); A.innerHTML=scopeBar()+viewDivCal(C); }
   else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'+SC); A.innerHTML=scopeBar()+viewDiv(C); }
   const fab=$('#fab'); fab.hidden=false; fab.onclick=()=>txSheet(null,{type:(view==='div'||view==='divcal')?'div':'buy'});
   $('#fabLbl').textContent=(view==='div'||view==='divcal')?'Nytt utbytte':'Ny transaksjon';
@@ -1652,6 +1653,7 @@ document.addEventListener('click',e=>{
   else if(a==='refresh') refreshAll();
   else if(a==='scope'){ DB.settings.scope=b.dataset.k; save(); render(); }
   else if(a==='dcmode'){ dcMode=b.dataset.k; render(); }
+  else if(a==='dcest'){ DB.settings.dcEst=!DB.settings.dcEst; save(); render(); }
   else if(a==='range'){ chartRange=b.dataset.k; render(); }
   else if(a==='calm'){ calM.m+=+b.dataset.d; if(calM.m<0){calM.m=11;calM.y--;} if(calM.m>11){calM.m=0;calM.y++;} render(); }
   else if(a==='calday') calDaySheet(b.dataset.k);
