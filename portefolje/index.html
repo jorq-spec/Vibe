@@ -512,7 +512,7 @@ async function refreshSec(s, verbose){
   if(!s.ticker) return 'Mangler ticker – legg den inn for å hente automatisk.';
   if(!canFetch()) return 'Sett opp mellomstasjonen (og ev. EODHD-nøkkel) under Meny → Datakilder for å hente automatisk.';
   const msgs=[];
-  try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
+  try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=q.time||(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
       if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur} (${q.src||'auto'})`); } else msgs.push('fant ingen kurs'); }
   catch(e){ msgs.push('kurs: '+e.message); }
   try{ const d=await getDividends(s); if(d){ DB.divCache[s.id]={at:new Date().toISOString(),items:d}; msgs.push(`${d.length} utbytter i historikken`); } }
@@ -560,7 +560,38 @@ function autoRefresh(){
 
 /* An installed app on Android usually resumes instead of reloading, so check again
    whenever it comes back to the screen. */
-document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') autoRefresh(); });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ autoRefresh(); liveTick(); } });
+
+/* ---------- Live prices while the stock exchange is open ----------
+   Every 5 minutes while the app is on screen, fetch the latest price for what you own
+   (a small Yahoo call, no quota). Oslo Børs is open 09:00–16:20 on weekdays; prices are ~15 min delayed. */
+function osloNow(){
+  const f=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Oslo',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+  const g=k=>(f.find(x=>x.type===k)||{}).value; return {wd:g('weekday'), min:+g('hour')*60+ +g('minute')};
+}
+function marketOpen(){ const o=osloNow(); return !['Sat','Sun'].includes(o.wd)&&o.min>=9*60&&o.min<=16*60+50; }
+let liveBusy=false, liveLast=0;
+async function liveTick(force){
+  if(liveBusy||refreshing||document.visibilityState!=='visible') return;
+  if(!yahooReady()||!(force||marketOpen())) return;
+  if(!force&&Date.now()-liveLast<4.5*60e3) return;
+  liveBusy=true; liveLast=Date.now();
+  try{
+    const held=compute().pos, bucket=Math.floor(Date.now()/3e5); let n=0;
+    for(const s of DB.secs){
+      if(!held[s.id]) continue; const sym=yahooSymbol(s); if(!sym) continue;
+      if(eodFirst()&&eodSymbol(s)) continue;
+      try{ const r=await fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
+        const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
+        if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; s.priceTs=Date.now(); s.priceFetched=today();
+          if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[iso.slice(0,10)]=Math.round(p*1e4)/1e4; }
+          n++; }
+      }catch(e){}
+    }
+    if(n){ save(); render(); }
+  } finally { liveBusy=false; }
+}
+setInterval(()=>liveTick(),60e3);
 
 /* ============================================================
    Daily value series — the basis for the neon charts and the calendar.
@@ -1057,13 +1088,13 @@ async function yahoo(s){
   DB.divCache[s.id]={at:new Date().toISOString(),src:'Yahoo',items:old.filter(d=>!seen.has(d.exDate)).concat(divs)};
   const price=Number(res.meta?.regularMarketPrice)||Number(cl.filter(Boolean).pop());
   const when=res.meta?.regularMarketTime?ymdUTC(res.meta.regularMarketTime):ymdUTC(ts[ts.length-1]);
-  s.priceFetched=today(); s.priceVia='Yahoo';
-  return {price, date:when, cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
+  s.priceFetched=today(); s.priceVia='Yahoo'; s.priceTs=Date.now();
+  return {price, date:when, time:res.meta?.regularMarketTime?new Date(res.meta.regularMarketTime*1000).toISOString():'', cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
 }
 async function getQuote(s){
   if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!(yahooReady()&&yahooSymbol(s))) throw e; s.eodErr=e.message; } }
   if(yahooReady()&&yahooSymbol(s)){
-    if(s.priceVia==='Yahoo'&&s.priceFetched===today()&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),src:'Yahoo'};
+    if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
     try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
   }
   if(!dataReady()||eodFirst()) return null;
@@ -1193,7 +1224,11 @@ function render(){
 }
 function lastUpdateText(){
   const ts=DB.secs.map(s=>s.priceAt).filter(Boolean).sort(); const l=ts[ts.length-1];
-  return l?`Kurser fra ${prettyDate(l.slice(0,10))}`:'Kurser ikke hentet ennå';
+  if(!l) return 'Kurser ikke hentet ennå';
+  const d=new Date(l), loc=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const exact=!/T12:00:00$/.test(l)&&!isNaN(d);
+  if(exact&&loc===today()) return `Kurser i dag kl. ${pad(d.getHours())}:${pad(d.getMinutes())}`+(typeof marketOpen==='function'&&marketOpen()?' · oppdateres løpende':'');
+  return `Kurser fra ${prettyDate(l.slice(0,10))}`+(exact?` kl. ${pad(d.getHours())}:${pad(d.getMinutes())}`:'');
 }
 function totals(C){
   const P=Object.values(C.pos);
