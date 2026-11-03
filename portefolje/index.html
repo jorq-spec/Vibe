@@ -95,6 +95,7 @@ html.dark .tag.new{background:#3A2E12;color:#F2BE55}
 .legend{display:grid;gap:6px}
 .legend div{display:flex;align-items:center;gap:8px;font-size:14px}
 .legend i{width:10px;height:10px;border-radius:3px;flex:none}
+.legend .tap{cursor:pointer;margin:-4px -6px;padding:4px 6px;border-radius:8px}.legend .tap:active{background:var(--soft)}.legend .chev{font-style:normal;color:var(--muted);margin-left:2px}
 .legend span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
@@ -754,13 +755,87 @@ function divChart(C){
   return `<div class="neon"><div class="spread"><div class="nlbl">Utbytte per måned · 24 mnd</div><div class="num" style="color:${NEON.c};font-weight:700;text-shadow:0 0 10px currentColor">${kr(tot)}</div></div>
     <svg viewBox="0 0 ${W} ${H}" class="nsvg"><defs><filter id="gd" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>${bars}</svg></div>`;
 }
+/* ---------- Price chart for one stock (in its sheet), with the same ranges as the main chart ---------- */
+let spRange='1Å'; const spCache={};
+function spPts(s, rk){
+  if(INTRA[rk]){
+    const c=spCache[s.id+'|'+rk];
+    if(c&&Date.now()-c.at<5*60e3) return c.pts;
+    if(!c||!c.loading){ const sym=yahooSymbol(s), spec=INTRA[rk];
+      spCache[s.id+'|'+rk]={at:c?c.at:0, pts:c?c.pts:null, loading:true};
+      fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${Math.floor(Date.now()/3e5)}`)
+        .then(r=>r.json()).then(j=>{ const res=j?.chart?.result?.[0]; if(!res) throw 0;
+          const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
+          const pts=ts.map((t,i)=>({t:t*1000,v:cl[i]})).filter(x=>x.v>0);
+          const prev=Number(res.meta?.chartPreviousClose||res.meta?.previousClose)||0;
+          if(rk==='1D'&&prev&&pts.length) pts.unshift({t:pts[0].t-60e3,v:prev,prev:true});
+          spCache[s.id+'|'+rk]={at:Date.now(),pts}; })
+        .catch(()=>{ spCache[s.id+'|'+rk]={at:Date.now(),pts:[]}; })
+        .finally(()=>spRedraw(s)); }
+    return c?c.pts:null;
+  }
+  const days=RANGES.find(r=>r[0]===rk)[1], from=addDays(today(),-days);
+  const k=Object.keys(s.hist||{}).sort().filter(d=>rk==='Alt'||d>=from);
+  const pts=k.map(d=>({t:parseYmd(d),d,v:s.hist[d]}));
+  if(num(s.price)>0&&(!k.length||k[k.length-1]<today())) pts.push({t:Date.now(),d:today(),v:num(s.price)});
+  return pts;
+}
+function spRedraw(s){ const box=document.getElementById('spk'); if(box&&box.dataset.id===s.id) box.innerHTML=spInner(s); }
 function sparkline(s){
-  const k=Object.keys(s.hist||{}).sort().slice(-260); if(k.length<5) return '';
-  const v=k.map(d=>s.hist[d]); const lo=Math.min(...v), hi=Math.max(...v)||1, W=340,H=70;
-  const path=v.map((p,i)=>`${i?'L':'M'}${(i/(v.length-1)*W).toFixed(1)} ${(H-4-(p-lo)/((hi-lo)||1)*(H-8)).toFixed(1)}`).join('');
-  const up=v[v.length-1]>=v[0], col=up?NEON.up:NEON.down;
-  return `<div class="neon" style="padding:10px 12px"><div class="spread"><span class="nlbl">Kurs siste ${k.length>200?'år':k.length+' dager'}</span><span class="num tiny" style="color:${col}">${pct((v[v.length-1]/v[0]-1)*100)}</span></div>
-    <svg viewBox="0 0 ${W} ${H}" class="nsvg">${neonDefs('s')}<path d="${path}" fill="none" stroke="${col}" stroke-width="2" filter="url(#gs)"/></svg></div>`;
+  if(Object.keys(s.hist||{}).length<5&&!(yahooReady()&&yahooSymbol(s))) return '';
+  return `<div id="spk" data-id="${esc(s.id)}">${spInner(s)}</div>`;
+}
+function spInner(s){
+  const canIntra=yahooReady()&&yahooSymbol(s);
+  const ranges=RANGES.filter(([k])=>!INTRA[k]||canIntra);
+  if(!ranges.some(r=>r[0]===spRange)) spRange='1Å';
+  const rk=spRange, intra=!!INTRA[rk], pts=spPts(s,rk);
+  const chips=`<div class="nchips">${ranges.map(([k])=>`<button data-sp="${k}" aria-pressed="${k===rk}">${k}</button>`).join('')}</div>`;
+  if(!pts) return `<div class="neon"><div class="nlbl">Kurs</div><p class="nnote" style="margin:14px 2px"><span class="spin"></span> Henter kurser…</p>${chips}</div>`;
+  if(pts.length<2) return `<div class="neon"><div class="nlbl">Kurs</div><p class="nnote" style="margin:14px 2px">${intra?'Ingen kurser gjennom dagen ennå – børsen åpner kl. 09.':'For lite kurshistorikk i denne perioden.'}</p>${chips}</div>`;
+  const W=360,H=170,L=8,R=8,T=14,B=22;
+  const vals=pts.map(p=>p.v); let lo=Math.min(...vals), hi=Math.max(...vals); if(hi-lo<1e-6){ hi+=1; lo-=1; } const pd=(hi-lo)*.08; lo-=pd; hi+=pd;
+  const x=i=>L+i*(W-L-R)/Math.max(1,pts.length-1), y=v=>T+(hi-v)/(hi-lo)*(H-T-B);
+  const first=pts[0], last=pts[pts.length-1], ch=last.v/first.v-1, col=ch>=0?NEON.up:NEON.down;
+  const line=pts.map((p,i)=>`${i?'L':'M'}${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join('');
+  const area=`${line}L${x(pts.length-1)} ${H-B}L${x(0)} ${H-B}Z`;
+  const dec=Math.abs(last.v)<10?3:2, fmtV=v=>nf(v,dec);
+  const grid=[0,1,2,3].map(k=>{ const v=lo+(hi-lo)*k/3, yy=y(v); return `<line x1="${L}" x2="${W-R}" y1="${yy}" y2="${yy}" stroke="${NEON.grid}"/><text x="${W-R}" y="${yy-3}" text-anchor="end" font-size="9.5" fill="${NEON.axis}">${fmtV(v)}</text>`; }).join('');
+  const lbl=p=>intra?(rk==='1D'?new Date(p.t).toTimeString().slice(0,5):prettyDate(ymd(new Date(p.t))).replace(/ \d{4}$/,'')+' '+new Date(p.t).toTimeString().slice(0,5)):prettyDate(p.d).replace(/ \d{4}$/,m=>pts.length>200?m:'');
+  const lab=[0,Math.floor(pts.length/2),pts.length-1].map(i=>`<text x="${x(i)}" y="${H-6}" text-anchor="${i===0?'start':i===pts.length-1?'end':'middle'}" font-size="9.5" fill="${NEON.axis}">${esc(lbl(pts[i]))}</text>`).join('');
+  /* your own buys and sells in this stock */
+  let mk='';
+  if(!intra){ const idx=d=>{ let lo2=0,hi2=pts.length-1; if(d<pts[0].d||d>pts[hi2].d) return -1; while(lo2<hi2){ const m=(lo2+hi2)>>1; if(pts[m].d<d) lo2=m+1; else hi2=m; } return lo2; };
+    DB.tx.filter(t=>t.secId===s.id&&(t.type==='buy'||t.type==='sell')).forEach(t=>{ const i=idx(t.date); if(i<0) return; const X=x(i), Y=y(pts[i].v);
+      mk+=t.type==='buy'?`<path d="M${X} ${Y+5}l5 8h-10z" fill="${NEON.up}" filter="url(#gp)"><title>Kjøp ${prettyDate(t.date)}</title></path>`:`<path d="M${X} ${Y-5}l5 -8h-10z" fill="${NEON.down}" filter="url(#gp)"><title>Salg ${prettyDate(t.date)}</title></path>`; }); }
+  window._sppts={pts,lo,hi,W,H,L,R,T,B,intra,rk,first:first.v};
+  const per={'1D':'I dag','1U':'Siste uke','1M':'Siste måned','3M':'Siste 3 mnd','6M':'Siste 6 mnd','1Å':'Siste år','3Å':'Siste 3 år','Alt':'Hele perioden'}[rk];
+  return `<div class="neon">
+    <div class="spread"><div><div class="nlbl">Kurs · ${esc(per)}</div><div class="nbig num">${fmtV(last.v)} <span style="font-size:13px;color:${NEON.axis}">${esc(s.cur||'')}</span></div></div>
+      <div style="text-align:right"><div class="num" style="color:${col};font-weight:700;text-shadow:0 0 10px currentColor">${ch>=0?'+':''}${fmtV(last.v-first.v)}</div><div class="num tiny" style="color:${col}">${pct(ch*100)}</div></div></div>
+    <svg viewBox="0 0 ${W} ${H}" class="nsvg" data-chart="sp"><defs>
+      <filter id="gp" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+      <linearGradient id="fap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".32"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+      ${grid}${rk==='1D'&&first.prev?`<line x1="${L}" x2="${W-R}" y1="${y(first.v)}" y2="${y(first.v)}" stroke="${NEON.axis}" stroke-dasharray="3 4" stroke-opacity=".6"/>`:''}
+      <path d="${area}" fill="url(#fap)"/>
+      <path d="${line}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" filter="url(#gp)"/>${mk}
+      <circle cx="${x(pts.length-1)}" cy="${y(last.v)}" r="3.6" fill="${col}" filter="url(#gp)"/>
+      ${lab}<g class="scrub" style="display:none"><line y1="${T}" y2="${H-B}" stroke="#fff" stroke-opacity=".35"/><circle r="4" fill="${col}"/></g></svg>
+    <div class="nread tiny num" id="spread">&nbsp;</div>
+    ${chips}
+    ${INTRA[rk]?'':''}</div>`;
+}
+document.addEventListener('pointermove',spScrub); document.addEventListener('pointerdown',spScrub);
+function spScrub(e){
+  const svg=e.target.closest&&e.target.closest('svg[data-chart=sp]'); if(!svg) return;
+  const S=window._sppts; if(!S||S.pts.length<2) return;
+  const r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal, fx=(e.clientX-r.left)/r.width*vb.width;
+  const i=Math.max(0,Math.min(S.pts.length-1,Math.round((fx-S.L)/(S.W-S.L-S.R)*(S.pts.length-1)))), p=S.pts[i];
+  const X=S.L+i*(S.W-S.L-S.R)/(S.pts.length-1), Y=S.T+(S.hi-p.v)/(S.hi-S.lo)*(S.H-S.T-S.B);
+  const g=svg.querySelector('.scrub'); g.style.display=''; g.querySelector('line').setAttribute('x1',X); g.querySelector('line').setAttribute('x2',X);
+  g.querySelector('circle').setAttribute('cx',X); g.querySelector('circle').setAttribute('cy',Y);
+  const when=S.intra?prettyDate(ymd(new Date(p.t)))+' kl. '+new Date(p.t).toTimeString().slice(0,5):prettyDate(p.d);
+  const rd=document.getElementById('spread'); if(rd) rd.textContent=`${p.prev?'Gårsdagens slutt':when} · ${nf(p.v,p.v<10?3:2)} · ${pct((p.v/S.first-1)*100)}`;
 }
 /* finger/mouse scrub on the value chart */
 document.addEventListener('pointermove',scrub); document.addEventListener('pointerdown',scrub);
@@ -1242,7 +1317,7 @@ function allocHtml(items){
   const tot=items.reduce((s,x)=>s+x.v,0); if(!tot) return '';
   const col=i=>`var(--c${(i%8)+1})`;
   return `<div class="alloc">${items.map((x,i)=>`<i style="width:${x.v/tot*100}%;background:${col(i)}"></i>`).join('')}</div>
-    <div class="legend">${items.map((x,i)=>`<div><i style="background:${col(i)}"></i><span>${esc(x.k)}</span><b class="num">${nf(x.v/tot*100,1)} %</b></div>`).join('')}</div>`;
+    <div class="legend">${items.map((x,i)=>`<div${x.id?` data-act="opensec" data-id="${esc(x.id)}" class="tap"`:''}><i style="background:${col(i)}"></i><span>${esc(x.k)}</span><b class="num">${nf(x.v/tot*100,1)} %</b>${x.id?'<em class="chev">›</em>':''}</div>`).join('')}</div>`;
 }
 function group(C, keyFn){
   const m={}; Object.values(C.pos).forEach(p=>{ const k=keyFn(p)||'Ukjent'; m[k]=(m[k]||0)+(p.value??p.cost); });
@@ -1276,7 +1351,7 @@ function viewHome(C){
     </div>
     ${valueChart()}
     ${Object.keys(C.pos).length?`<h2 class="sec">Fordeling</h2>
-    <div class="card"><div class="tiny muted" style="font-weight:650">${scope()==="fond"&&bothKinds()?"Per fond":bothKinds()&&scope()==="all"?"Per aksje og fond":"Per aksje"}</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8))}</div>
+    <div class="card"><div class="tiny muted" style="font-weight:650">${scope()==="fond"&&bothKinds()?"Per fond":bothKinds()&&scope()==="all"?"Per aksje og fond":"Per aksje"}</div>${allocHtml(group(C,p=>sec(p.secId)?.name).slice(0,8).map(x=>({...x,id:(DB.secs.find(z=>z.name===x.k&&C.pos[z.id])||{}).id})))}</div>
     ${scope()==='all'&&bothKinds()?splitCard(C):''}
     <div class="two"><div class="card"><div class="tiny muted" style="font-weight:650">Valuta</div>${allocHtml(group(C,p=>sec(p.secId)?.cur))}</div>
       <div class="card"><div class="tiny muted" style="font-weight:650">Sektor</div>${allocHtml(group(C,p=>sec(p.secId)?.sector))}</div></div>`:''}
@@ -1584,6 +1659,7 @@ function secSheet(id, onSaved, secPreset){
     ${txs.length?`<h2 class="sec">Transaksjoner</h2>${txs.map(txLine).join('')}`:''}
     ${id?`<button class="btn danger full" id="sdel" style="margin-top:12px">Slett ${isFund(s)?'fondet':'aksjen'}${txs.length?' og alle transaksjonene':''}</button>`:''}`);
   const q=x=>sh.querySelector(x);
+  { const sp=sh.querySelector('#spk'); if(sp) sp.addEventListener('click',e=>{ const b=e.target.closest('[data-sp]'); if(!b) return; spRange=b.dataset.sp; spRedraw(s); }); }
   const pxLbl=()=>{ q('label[for=spx]').textContent=`${kind==='fond'?'Andelskurs':'Kurs'} nå (${q('#sc').value})`; };
   const ksync=()=>{ const f=kind==='fond';
     q('#lst').textContent=f?'ISIN':'Ticker'; q('#st').placeholder=f?'f.eks. NO0010337678':'f.eks. EQNR';
