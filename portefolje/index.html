@@ -360,10 +360,15 @@ function fxNow(cur){ if(!cur||cur==='NOK') return 1; const f=DB.fx[cur]; if(f&&f
 /* ============================================================
    Data sources — filled in below (prices, dividends, exchange rates)
    ============================================================ */
+/* Every network call gives up after a while, so one slow answer can't freeze a refresh. */
+function fetchT(url,opt={},ms=15000){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),ms);
+  return fetch(url,{...opt,signal:c.signal}).catch(e=>{ throw e&&e.name==='AbortError'?new Error('tidsavbrudd – fikk ikke svar på '+Math.round(ms/1000)+' s'):e; }).finally(()=>clearTimeout(t));
+}
 /* ---------- Exchange rates: Norges Bank first, ECB (Frankfurter) as backup ---------- */
 async function fxNorgesBank(cur, start, end){
   const u=`${typeof proxyBase==='function'?proxyBase('nb','https://data.norges-bank.no'):'https://data.norges-bank.no'}/api/data/EXR/B.${cur}.NOK.SP?format=sdmx-json&startPeriod=${start}&endPeriod=${end}&locale=en`;
-  const r=await fetch(u); if(!r.ok) throw new Error('Norges Bank '+r.status);
+  const r=await fetchT(u); if(!r.ok) throw new Error('Norges Bank '+r.status);
   const j=await r.json(); const root=j.data||j, st=root.structure;
   const dates=st.dimensions.observation[0].values.map(v=>v.id);
   const defs=(st.attributes&&st.attributes.series)||[];
@@ -377,7 +382,7 @@ async function fxNorgesBank(cur, start, end){
 }
 async function fxFrankfurter(cur, start, end){
   for(const base of ['https://api.frankfurter.dev/v1','https://api.frankfurter.app']){
-    try{ const r=await fetch(`${base}/${start}..${end}?from=${cur}&to=NOK`); if(!r.ok) continue;
+    try{ const r=await fetchT(`${base}/${start}..${end}?from=${cur}&to=NOK`); if(!r.ok) continue;
       const j=await r.json(); const out={}; for(const [d,v] of Object.entries(j.rates||{})) if(v&&v.NOK) out[d]=v.NOK; return out; }catch(e){}
   }
   throw new Error('ingen svar');
@@ -529,7 +534,7 @@ async function refreshAll(manual=true){
     { const first=DB.tx.map(t=>t.date).sort()[0];
       if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }
     /* a worker flagged as old may have been updated since — check again (cheap, no quota) */
-    if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetch(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
+    if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=compute().pos;
     /* what you own now first, so the free daily quota goes where it matters */
@@ -538,7 +543,8 @@ async function refreshAll(manual=true){
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
     for(const s of list){ if(dataReady()&&budget()<=0&&!yahooMaybe(s)){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
-      const r=await refreshSec(s); log.push({name:s.name,msg:r});
+      if(manual) toast(`Henter ${list.indexOf(s)+1} av ${list.length}: ${s.name}`);
+      const r=await refreshSec(s); log.push({name:s.name,msg:r}); DB.lastLog={at:new Date().toISOString(),rows:log.slice()};
       if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push({name:s.name,msg:r}); await sleep(PROVIDER_GAP_MS); }
     DB.lastLog={at:new Date().toISOString(),rows:log};
     /* only a refresh that actually got something counts as today's — otherwise the app tries again next time it's opened */
@@ -582,7 +588,7 @@ async function liveTick(force){
     for(const s of DB.secs){
       if(!held[s.id]) continue; const sym=yahooSymbol(s); if(!sym) continue;
       if(eodFirst()&&eodSymbol(s)) continue;
-      try{ const r=await fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
+      try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
         if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; s.priceTs=Date.now(); s.priceFetched=today();
           if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[iso.slice(0,10)]=Math.round(p*1e4)/1e4; }
@@ -669,7 +675,7 @@ async function loadIntraday(rk){
   for(const p of P){ const s=sec(p.secId), sym=yahooReady()?yahooSymbol(s):'';
     const fx=s.cur==='NOK'?1:(fxNow(s.cur)||1);
     if(!sym){ series.push({q:p.qty*fx, pts:[], flat:num(s.price)||p.avg}); continue; }
-    try{ const r=await fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${bucket}`);
+    try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${bucket}`);
       const j=await r.json(), res=j?.chart?.result?.[0]; if(!res) throw 0;
       const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
       const pts=ts.map((t,i)=>[t*1000,cl[i]]).filter(x=>x[1]>0);
@@ -763,7 +769,7 @@ function spPts(s, rk){
     if(c&&Date.now()-c.at<5*60e3) return c.pts;
     if(!c||!c.loading){ const sym=yahooSymbol(s), spec=INTRA[rk];
       spCache[s.id+'|'+rk]={at:c?c.at:0, pts:c?c.pts:null, loading:true};
-      fetch(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${Math.floor(Date.now()/3e5)}`)
+      fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${spec.range}&interval=${spec.interval}&_=${Math.floor(Date.now()/3e5)}`)
         .then(r=>r.json()).then(j=>{ const res=j?.chart?.result?.[0]; if(!res) throw 0;
           const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
           const pts=ts.map((t,i)=>({t:t*1000,v:cl[i]})).filter(x=>x.v>0);
@@ -1116,7 +1122,7 @@ function showBudget(){ const e=document.getElementById('pbudget'); if(e) e.textC
 async function eod(path, params){
   if(budget()<=0) throw new Error(`dagens ${capDaily()} EODHD-oppslag er brukt opp – prøver igjen i morgen`);
   const u=`${proxyBase('eodhd','https://eodhd.com')}/api/${path}?api_token=${encodeURIComponent(DB.settings.apiKey)}&fmt=json${params||''}`;
-  let r; try{ r=await fetch(u); }catch(e){ throw new Error(DB.settings.proxy?'fikk ikke kontakt via mellomstasjonen – sjekk adressen':'EODHD tillater ikke kall rett fra nettleseren – sett opp mellomstasjonen under'); }
+  let r; try{ r=await fetchT(u); }catch(e){ throw new Error(DB.settings.proxy?'fikk ikke kontakt via mellomstasjonen – sjekk adressen':'EODHD tillater ikke kall rett fra nettleseren – sett opp mellomstasjonen under'); }
   DB.calls.n++; save(); showBudget();
   const txt=await r.text();
   /* pass EODHD's own words along — they say exactly what's wrong (plan, ticker, quota) */
@@ -1155,11 +1161,11 @@ async function resolveFundYahoo(s){
   const isin=String(s.ticker||'').trim().toUpperCase(); if(!ISIN_RE.test(isin)) return '';
   if(s.ySym==='-'&&s.yTried&&Date.now()-s.yTried<7*864e5) return '';
   s.yTried=Date.now();
-  try{ const r=await fetch(`${proxyBase('yahoo','')}/v1/finance/search?q=${encodeURIComponent(isin)}&quotesCount=6&newsCount=0&listsCount=0`);
+  try{ const r=await fetchT(`${proxyBase('yahoo','')}/v1/finance/search?q=${encodeURIComponent(isin)}&quotesCount=6&newsCount=0&listsCount=0`,{},8000);
     const j=await r.json(); const qs=(j&&j.quotes)||[];
     const hit=qs.find(q=>/MUTUALFUND|ETF/i.test(q.quoteType||'')&&/\.IR$/.test(q.symbol||''))||qs.find(q=>/MUTUALFUND|ETF/i.test(q.quoteType||''))||qs[0];
     s.ySym=hit&&hit.symbol?hit.symbol:'-'; }
-  catch(e){ s.ySym='-'; }
+  catch(e){ s.ySym='-'; s.yTried=Date.now()-6*864e5; }   // no answer: try again tomorrow, not in a week
   save(); return fundYahoo(s);
 }
 /* with a paid EODHD plan you can let EODHD go first; Yahoo then only fills gaps */
@@ -1171,7 +1177,7 @@ async function yahoo(s){
   const from=hd.length&&hd[0]<=addDays(first,3)?addDays(hd[hd.length-1],-7):addDays(first,-10);
   const p1=Math.floor(parseYmd(from)/1000), p2=Math.floor(Date.now()/1000)+86400;
   const u=`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?period1=${p1}&period2=${p2}&interval=1d&events=div`;
-  let r; try{ r=await fetch(u); }catch(e){ throw new Error('fikk ikke kontakt via mellomstasjonen'); }
+  let r; try{ r=await fetchT(u); }catch(e){ throw new Error('fikk ikke kontakt via mellomstasjonen'); }
   const txt=await r.text();
   if(/^Mellomstasjonen virker/.test(txt)&&!/v2/.test(txt)){ DB.proxyOld=true; save(); throw new Error('mellomstasjonen har gammel kode'); }
   let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error('Yahoo svarte '+r.status); }
@@ -1278,7 +1284,7 @@ function sourcesSheet(){
   q('#pxsave').onclick=async()=>{ let v=q('#px').value.trim(); if(v&&!/^https?:\/\//.test(v)) v='https://'+v; st.proxy=v.replace(/\/+$/,''); q('#px').value=st.proxy; save();
     if(!st.proxy){ q('#pxres').textContent='Fjernet'; return; }
     q('#pxres').innerHTML='<span class="spin"></span> Sjekker…';
-    try{ const r=await fetch(st.proxy+'/'); const tx=await r.text(); DB.proxyOld=r.ok&&!/v2/.test(tx); save();
+    try{ const r=await fetchT(st.proxy+'/'); const tx=await r.text(); DB.proxyOld=r.ok&&!/v2/.test(tx); save();
       q('#pxres').textContent=!r.ok?'Svarte '+r.status+' – sjekk at koden er limt inn og deployet.':DB.proxyOld?'Svarer, men med gammel kode – lim inn ny kode (Kopier koden) og deploy.':'Mellomstasjonen svarer (v2). Trykk «Oppdater nå».'; }
     catch(e){ q('#pxres').textContent='Fikk ikke kontakt – sjekk adressen, og at koden er deployet.'; } };
   q('#pcap').onchange=()=>{ st.eodCap=Math.max(1,parseInt(q('#pcap').value)||20); q('#pcap').value=st.eodCap; save(); showBudget(); toast('Lagret'); };
