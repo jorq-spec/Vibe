@@ -537,7 +537,7 @@ async function refreshAll(manual=true){
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
-    for(const s of list){ if((eodFirst()||!(yahooReady()&&yahooSymbol(s)))&&dataReady()&&budget()<=0&&!(yahooReady()&&yahooSymbol(s))){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
+    for(const s of list){ if(dataReady()&&budget()<=0&&!yahooMaybe(s)){ later++; log.push({name:s.name,msg:'venter til i morgen (kvote brukt)'}); continue; }
       const r=await refreshSec(s); log.push({name:s.name,msg:r});
       if(/kurs \d|kurs [\d,]/.test(r)||/utbytter i/.test(r)) ok++; else fail.push({name:s.name,msg:r}); await sleep(PROVIDER_GAP_MS); }
     DB.lastLog={at:new Date().toISOString(),rows:log};
@@ -1096,7 +1096,7 @@ function viewDivCal(C){
    and currency, so 2020 Bulkers' USD dividends land in USD. The free plan is
    rationed, so prices refresh once a day and dividend history once a week. */
 const PROVIDER_GAP_MS=250;
-const PROVIDER_INFO='Aksjer hentes fra Yahoo Finance via mellomstasjonen – uten nøkkel og uten daglig grense: kurs, kurshistorikk og utbytte i ett oppslag. Fond (ISIN) og aksjer Yahoo ikke har, hentes fra EODHD. Gratis EODHD-nøkkel: registrer deg på eodhd.com og kopier «API token». Gratisnivået der gir 20 oppslag i døgnet.';
+const PROVIDER_INFO='Aksjer hentes fra Yahoo Finance via mellomstasjonen – uten nøkkel og uten daglig grense: kurs, kurshistorikk og utbytte i ett oppslag. Fond slås opp hos Yahoo med ISIN. Det Yahoo ikke har, hentes fra EODHD. Gratis EODHD-nøkkel: registrer deg på eodhd.com og kopier «API token». Gratisnivået der gir 20 oppslag i døgnet.';
 const PROVIDER_KEY_LABEL='EODHD API token';
 const capDaily=()=>Math.max(1,parseInt(DB.settings.eodCap)||20);
 const DAILY_CAP=20;
@@ -1138,10 +1138,34 @@ function yahooSymbol(s){
   return ex==null?'':t+ex;
 }
 const yahooReady=()=>!!DB.settings.proxy&&!DB.proxyOld;
+/* Funds: Yahoo lists Norwegian funds under Morningstar ids (e.g. 0P00018V9L.IR).
+   Look the ISIN up once in Yahoo's search and remember the answer on the fund. */
+const ISIN_RE=/^[A-Z]{2}[A-Z0-9]{9}\d$/;
+function fundYahoo(s){
+  if(!isFund(s)) return '';
+  const t=String(s.ticker||'').trim().toUpperCase();
+  if(/^0P[0-9A-Z]{8}(\.[A-Z]{1,3})?$/.test(t)) return t;
+  return s.ySym&&s.ySym!=='-'?s.ySym:'';
+}
+const yahooFor=s=>yahooSymbol(s)||fundYahoo(s);
+/* worth trying Yahoo for this one? (a fund not looked up yet counts) */
+const yahooMaybe=s=>yahooReady()&&(!!yahooFor(s)||(isFund(s)&&ISIN_RE.test(String(s.ticker||'').trim().toUpperCase())&&!(s.ySym==='-'&&s.yTried&&Date.now()-s.yTried<7*864e5)));
+async function resolveFundYahoo(s){
+  if(fundYahoo(s)) return fundYahoo(s);
+  const isin=String(s.ticker||'').trim().toUpperCase(); if(!ISIN_RE.test(isin)) return '';
+  if(s.ySym==='-'&&s.yTried&&Date.now()-s.yTried<7*864e5) return '';
+  s.yTried=Date.now();
+  try{ const r=await fetch(`${proxyBase('yahoo','')}/v1/finance/search?q=${encodeURIComponent(isin)}&quotesCount=6&newsCount=0&listsCount=0`);
+    const j=await r.json(); const qs=(j&&j.quotes)||[];
+    const hit=qs.find(q=>/MUTUALFUND|ETF/i.test(q.quoteType||'')&&/\.IR$/.test(q.symbol||''))||qs.find(q=>/MUTUALFUND|ETF/i.test(q.quoteType||''))||qs[0];
+    s.ySym=hit&&hit.symbol?hit.symbol:'-'; }
+  catch(e){ s.ySym='-'; }
+  save(); return fundYahoo(s);
+}
 /* with a paid EODHD plan you can let EODHD go first; Yahoo then only fills gaps */
 const eodFirst=()=>DB.settings.prefer==='eodhd'&&dataReady();
 async function yahoo(s){
-  const sym=yahooSymbol(s); if(!sym) throw new Error('ingen Yahoo-ticker');
+  const sym=yahooFor(s); if(!sym) throw new Error('ingen Yahoo-ticker');
   const first=DB.tx.filter(t=>t.secId===s.id).map(t=>t.date).sort()[0]||addDays(today(),-365);
   const hd=Object.keys(s.hist||{}).sort();
   const from=hd.length&&hd[0]<=addDays(first,3)?addDays(hd[hd.length-1],-7):addDays(first,-10);
@@ -1167,8 +1191,9 @@ async function yahoo(s){
   return {price, date:when, time:res.meta?.regularMarketTime?new Date(res.meta.regularMarketTime*1000).toISOString():'', cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
 }
 async function getQuote(s){
-  if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!(yahooReady()&&yahooSymbol(s))) throw e; s.eodErr=e.message; } }
-  if(yahooReady()&&yahooSymbol(s)){
+  if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
+  if(yahooReady()&&isFund(s)&&!fundYahoo(s)) await resolveFundYahoo(s);
+  if(yahooReady()&&yahooFor(s)){
     if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
     try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
   }
@@ -1649,7 +1674,7 @@ function secSheet(id, onSaved, secPreset){
       <div class="f"><label for="sdc" id="lsdc">Utbytte i</label><select id="sdc"><option value="">Samme</option>${CURS.map(c=>`<option ${c===s.divCur?'selected':''}>${c}</option>`).join('')}</select></div></div>
     <div class="two"><div class="f"><label for="ssec">Sektor</label><input id="ssec" value="${esc(s.sector||'')}" placeholder="f.eks. Shipping" list="sectors"><datalist id="sectors">${[...new Set(DB.secs.map(x=>x.sector).filter(Boolean).concat(['Energi','Shipping','Finans','Sjømat','Teknologi','Industri','Eiendom','Helse','Forbruk','Råvarer','Fond']))].map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
       <div class="f"><label for="spx">Kurs nå (${esc(s.cur)})</label><input id="spx" inputmode="decimal" value="${esc(s.price)}" placeholder="hentes automatisk"></div></div>
-    <p class="hint" id="hfund" style="margin:-6px 2px 12px">Fond identifiseres med ISIN, en kode på 12 tegn som står på fondets side hos banken eller i Morningstar, f.eks. NO0010337678. Kurs er andelskurs (NAV), og den kommer med noen dagers forsinkelse.</p>
+    <p class="hint" id="hfund" style="margin:-6px 2px 12px">Fond identifiseres med ISIN, en kode på 12 tegn som står på fondets side hos banken eller i Morningstar, f.eks. NO0010337678. Kurs er andelskurs (NAV), som settes én gang per virkedag. Den hentes fra Yahoo uten kvote, med EODHD som reserve. Du kan også skrive Yahoo-koden direkte (begynner på 0P).</p>
     <p class="hint" id="hstock" style="margin:-6px 2px 12px">Ticker som på Oslo Børs, f.eks. EQNR eller 2020. For utenlandske aksjer velger du valuta, så finner appen børsen (USD → USA), eller skriv f.eks. NOVO-B.CO. Eksempel: 2020 Bulkers handles i NOK, men betaler utbytte i USD.</p>
     <button class="btn solid full" id="ssave">${id?'Lagre':'Legg til aksje'}</button>
     ${id?`<button class="btn full" id="sfetch" style="margin-top:10px">Hent kurs og utbytte nå</button><p class="hint" id="sfh" style="margin:6px 2px 0"></p>`:''}
@@ -1676,7 +1701,7 @@ function secSheet(id, onSaved, secPreset){
     const d={name, kind, ticker:q('#st').value.trim().toUpperCase().replace(/\s/g,''), cur:q('#sc').value, divCur:q('#sdc').value, sector:q('#ssec').value.trim()||(kind==='fond'?'Fond':'')};
     const px=num(q('#spx').value);
     let s2;
-    if(id){ const chg=String(px)!==String(num(s.price)); Object.assign(s,d); if(chg){ s.price=px>0?px:''; s.priceAt=px>0?new Date().toISOString():''; s.priceSrc='manuell'; } s2=s; }
+    if(id){ const chg=String(px)!==String(num(s.price)); if(d.ticker!==s.ticker||d.kind!==s.kind){ delete s.ySym; delete s.yTried; } Object.assign(s,d); if(chg){ s.price=px>0?px:''; s.priceAt=px>0?new Date().toISOString():''; s.priceSrc='manuell'; } s2=s; }
     else { s2={id:uid(),...d,price:px>0?px:'',priceAt:px>0?new Date().toISOString():'',priceSrc:px>0?'manuell':''}; DB.secs.push(s2); }
     save(); render();
     if(onSaved) return onSaved(s2);
