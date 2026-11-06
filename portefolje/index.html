@@ -939,6 +939,7 @@ function calDaySheet(k){
     ${mv.length>2?`<details style="margin:0 0 12px"><summary class="tiny" style="cursor:pointer;font-weight:650">Alle ${mv.length} denne dagen</summary>
       ${mv.map(m=>`<div class="spread tiny" data-sid="${esc(m.s.id)}" style="padding:7px 0;border-top:1px solid var(--soft);cursor:pointer"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.s.name)}</span>
         <span class="num ${cls(m.gain)}" style="width:72px;text-align:right">${sgn(m.gain)}</span><span class="num ${cls(m.gain)}" style="width:62px;text-align:right">${m.pct!=null?pct(m.pct*100):''}</span><span class="num muted" style="width:96px;text-align:right">${pxTxt(m)}<br>${m.qty>1e-3?qtyTxt(m.qty)+' stk':'solgt'}</span></div>`).join('')}</details>`:''}
+    ${x&&isToday&&Math.abs(x.gain)<0.5&&Object.keys(compute().pos).some(id=>inScope(id)&&isFund(sec(id)))?'<p class="tiny muted">Fond får bare én kurs per dag, og den settes etter at børsene har stengt. Dagens fondskurs kommer derfor først i morgen, og da fylles dagen inn.</p>':''}
     ${x&&!S.hasHist?'<p class="tiny muted">Beste og verste krever kurshistorikk, som hentes via mellomstasjonen.</p>':''}
     ${x&&x.events.length?x.events.map(txLine).join(''):'<p class="tiny muted">Ingen transaksjoner denne dagen.</p>'}`);
   if(sh) sh.addEventListener('click',e=>{ const t=e.target.closest('[data-sid]'); if(!t) return; closeSheet(); setTimeout(()=>secSheet(t.dataset.sid),250); });
