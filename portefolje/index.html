@@ -698,12 +698,18 @@ function intradayPts(rk){
   if(!intraLoading&&yahooReady()) intraLoading=loadIntraday(rk).catch(()=>null).finally(()=>{ intraLoading=null; if(view==='home') render(); });
   return c?c.pts:null;
 }
+/* intraday needs at least one stock Yahoo can price through the day (funds have one price a day) */
+function canIntraScope(){ if(!yahooReady()) return false; const P=compute().pos; return Object.keys(P).some(id=>{ const s=sec(id); return s&&inScope(id)&&yahooSymbol(s); }); }
+function chartChips(){ const ci=canIntraScope();
+  return RANGES.filter(([k])=>k!=='1D'||ci).map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join(''); }
 function valueChart(){
   const S=dailySeries(); if(S.days.length<2) return '';
   let pts, intra=false;
-  if(INTRA[chartRange]&&yahooReady()){ pts=intradayPts(chartRange); intra=true;
-    if(!pts||pts.length<2) return `<div class="neon"><div class="nlbl">${chartRange==='1D'?'I dag':'Siste uke'}</div><p class="nnote" style="margin:14px 2px"><span class="spin"></span> Henter kurser gjennom dagen…</p>
-      <div class="nchips">${RANGES.map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join('')}</div></div>`; }
+  if(chartRange==='1D'&&!canIntraScope()) chartRange='1U';
+  if(INTRA[chartRange]&&canIntraScope()){ pts=intradayPts(chartRange); intra=true;
+    const done=!!intraCache[chartRange+'|'+scope()];
+    if(!pts||pts.length<2) return `<div class="neon"><div class="nlbl">${chartRange==='1D'?'I dag':'Siste uke'}</div><p class="nnote" style="margin:14px 2px">${done&&!intraLoading?'Fikk ingen kurser gjennom dagen fra Yahoo. Prøv ↻ eller velg 1M.':'<span class="spin"></span> Henter kurser gjennom dagen…'}</p>
+      <div class="nchips">${chartChips()}</div></div>`; }
   else { const days=Math.min(S.days.length, RANGES.find(r=>r[0]===chartRange)[1]+1); pts=S.days.slice(-days); }
   window._vpts=pts;
   const W=360,H=190,L=8,R=8,T=14,B=22;
@@ -729,7 +735,7 @@ function valueChart(){
     <div class="nread tiny num" id="nread">&nbsp;</div>
     ${intra?'':`<div class="nlegend"><span><i style="background:${NEON.a}"></i>Markedsverdi</span><span><i style="background:${NEON.b}"></i>Netto satt inn</span></div>`}
     ${intra?'':`<div class="nmarks">${[['buy','▲ Kjøp',NEON.up],['sell','▼ Salg',NEON.down],['div','● Utbytte',NEON.c]].map(([k,l,c])=>`<button data-act="mark" data-k="${k}" aria-pressed="${!!markOpts()[k]}" style="--mc:${c}">${l}</button>`).join('')}</div>`}
-    <div class="nchips">${RANGES.map(([k])=>`<button data-act="range" data-k="${k}" aria-pressed="${k===chartRange}">${k}</button>`).join('')}</div>
+    <div class="nchips">${chartChips()}</div>
     ${intra?`<p class="nnote">Det du eier i dag, priset gjennom ${chartRange==='1D'?'dagen':'uka'} (Yahoo, ca. 15 min forsinket). Fond holdes på siste kjente kurs.</p>`:''}
     ${INTRA[chartRange]&&!yahooReady()?`<p class="nnote">Kurser gjennom dagen krever mellomstasjonen med Yahoo. Viser sluttkurser i stedet.</p>`:''}
     ${!S.hasHist&&!intra?`<p class="nnote">Kurve mellom handlene fylles ut når appen har hentet kurshistorikk (via mellomstasjonen). Til da brukes kursen ved hver handel.</p>`:''}
@@ -892,11 +898,48 @@ function viewCal(){
   </div>
   <p class="note">Endringen per dag er kursbevegelse i kroner: verdiendring minus det du kjøpte eller solgte for den dagen. Utbytte vises for seg.</p>`;
 }
+/* how each holding moved on one day: kroner, percent and value */
+function secDayMoves(k){
+  const prevD=addDays(k,-1), tx=sortedTx(true).filter(t=>t.secId&&inScope(t.secId)&&t.date<=k);
+  const qE={}, qP={}, flow={};
+  for(const t of tx){
+    const q=num(t.qty), sid=t.secId, on=t.date===k;
+    if(t.type==='buy'){ qE[sid]=(qE[sid]||0)+q; if(!on) qP[sid]=(qP[sid]||0)+q; else flow[sid]=(flow[sid]||0)-txAmount(t); }
+    else if(t.type==='sell'){ qE[sid]=(qE[sid]||0)-q; if(!on) qP[sid]=(qP[sid]||0)-q; else flow[sid]=(flow[sid]||0)-txAmount(t); }
+    else if(t.type==='split'){ const r=num(t.ratio)||1; qE[sid]=(qE[sid]||0)*r; qP[sid]=(qP[sid]||0)*r; }
+  }
+  const pxOn=(s,d)=>{ if(d===today()&&num(s.price)>0) return num(s.price); const ks=Object.keys(s.hist||{}).sort(); return ks.length?lastOn(s.hist,ks,d):undefined; };
+  const fxOnD=(s,d)=>{ if(s.cur==='NOK') return 1; const H=(DB.fxHist||{})[s.cur]; const ks=H?Object.keys(H).sort():[]; return (ks.length?lastOn(H,ks,d):undefined)||fxNow(s.cur)||1; };
+  const out=[];
+  for(const sid of new Set([...Object.keys(qE),...Object.keys(qP)])){
+    const s=sec(sid); if(!s) continue; const e=qE[sid]||0, p=qP[sid]||0; if(e<=1e-9&&p<=1e-9) continue;
+    const pk=pxOn(s,k), pp=pxOn(s,prevD); if(pk==null) continue;
+    const vE=e*pk*fxOnD(s,k), vP=pp!=null?p*pp*fxOnD(s,prevD):0;
+    const gain=vE-vP-(flow[sid]||0);
+    const pct=pp?(pk*fxOnD(s,k))/(pp*fxOnD(s,prevD))-1:null;
+    out.push({s, gain, pct, value:vE});
+  }
+  return out.sort((a,b)=>b.gain-a.gain);
+}
 function calDaySheet(k){
   const S=dailySeries(), x=S.days.find(d=>d.d===k);
-  openSheet(`<h3>${esc(prettyDate(k))}</h3><p class="sub">${x?`Verdi ved dagens slutt: ${kr(x.value)}`:'Før første handel'}</p>
+  const mv=x?secDayMoves(k).filter(m=>Math.abs(m.gain)>0.5||m.pct):[];
+  const isToday=k===today();
+  const card=(m,lbl)=>`<div class="card" style="margin:0;padding:12px;cursor:pointer" data-sid="${esc(m.s.id)}"><div class="tiny muted" style="font-weight:650">${lbl}</div>
+    <b style="display:block;margin:2px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.s.name)}</b>
+    <div class="num ${cls(m.gain)}" style="font-weight:750;font-size:18px">${sgn(m.gain)} kr</div>
+    <div class="num tiny ${cls(m.gain)}">${m.pct!=null?pct(m.pct*100):''}</div>
+    <div class="num tiny muted" style="margin-top:4px">${isToday?'nå':'verdi'} ${kr(m.value)}</div></div>`;
+  const best=mv[0], worst=mv.length>1?mv[mv.length-1]:null;
+  const sh=openSheet(`<h3>${esc(prettyDate(k))}</h3><p class="sub">${x?`${isToday?'Verdi nå':'Verdi ved dagens slutt'}: ${kr(x.value)}`:'Før første handel'}</p>
     ${x?`<div class="kv" style="margin:0 0 12px"><div><span>Kursendring</span><b class="num ${cls(x.gain)}">${sgn(x.gain)} kr</b></div><div><span>Utbytte</span><b class="num">${kr(x.div)}</b></div></div>`:''}
+    ${best?`<div class="two" style="margin:0 0 12px">${card(best,best.gain>=0?'▲ Beste':'Minst ned')}${worst?card(worst,worst.gain<0?'▼ Verste':'Minst opp'):''}</div>`:''}
+    ${mv.length>2?`<details style="margin:0 0 12px"><summary class="tiny" style="cursor:pointer;font-weight:650">Alle ${mv.length} denne dagen</summary>
+      ${mv.map(m=>`<div class="spread tiny" data-sid="${esc(m.s.id)}" style="padding:7px 0;border-top:1px solid var(--soft);cursor:pointer"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.s.name)}</span>
+        <span class="num ${cls(m.gain)}" style="width:72px;text-align:right">${sgn(m.gain)}</span><span class="num ${cls(m.gain)}" style="width:62px;text-align:right">${m.pct!=null?pct(m.pct*100):''}</span><span class="num muted" style="width:84px;text-align:right">${kr(m.value)}</span></div>`).join('')}</details>`:''}
+    ${x&&!S.hasHist?'<p class="tiny muted">Beste og verste krever kurshistorikk, som hentes via mellomstasjonen.</p>':''}
     ${x&&x.events.length?x.events.map(txLine).join(''):'<p class="tiny muted">Ingen transaksjoner denne dagen.</p>'}`);
+  if(sh) sh.addEventListener('click',e=>{ const t=e.target.closest('[data-sid]'); if(!t) return; closeSheet(); setTimeout(()=>secSheet(t.dataset.sid),250); });
 }
 
 /* ============================================================
