@@ -522,6 +522,7 @@ async function refreshSec(s, verbose){
   try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=q.time||(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
       if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur} (${q.src||'auto'})`); } else msgs.push('fant ingen kurs'); }
   catch(e){ msgs.push('kurs: '+e.message); }
+  { const hd=Object.keys(s.hist||{}).sort(); msgs.push(hd.length?`historikk ${hd.length} dager (${prettyDate(hd[0])}–${prettyDate(hd[hd.length-1])})`:'ingen kurshistorikk'); }
   try{ const d=await getDividends(s); if(d){ DB.divCache[s.id]={at:new Date().toISOString(),items:d}; msgs.push(`${d.length} utbytter i historikken`); } }
   catch(e){ msgs.push('utbytte: '+e.message); }
   save();
@@ -531,9 +532,10 @@ async function refreshAll(manual=true){
   if(refreshing) return; refreshing=true;
   const btn=document.querySelector('[data-act=refresh]'); if(btn) btn.innerHTML='<span class="spin"></span>';
   try{
-    await refreshFx();
-    { const first=DB.tx.map(t=>t.date).sort()[0];
-      if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }
+    /* exchange rates must never stop the prices from being fetched */
+    try{ await refreshFx(); }catch(e){}
+    try{ const first=DB.tx.map(t=>t.date).sort()[0];
+      if(first) for(const c of new Set(DB.secs.map(s=>s.cur).concat(DB.tx.map(t=>t.cur)).filter(c=>c&&c!=='NOK'))) await ensureFxRange(c,first); }catch(e){}
     /* a worker flagged as old may have been updated since — check again (cheap, no quota) */
     if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
@@ -1234,8 +1236,12 @@ async function yahoo(s){
   const from=hd.length&&hd[0]<=addDays(first,3)?addDays(hd[hd.length-1],-7):addDays(first,-10);
   const p1=Math.floor(parseYmd(from)/1000), p2=Math.floor(Date.now()/1000)+86400;
   const u=`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?period1=${p1}&period2=${p2}&interval=1d&events=div`;
-  let r; try{ r=await fetchT(u); }catch(e){ throw new Error('fikk ikke kontakt via mellomstasjonen'); }
-  const txt=await r.text();
+  let r, txt;
+  try{ r=await fetchT(u,{},25000); txt=await r.text(); }catch(e){ r=null; }
+  /* a long history can be too much in one go — fall back to Yahoo's own range */
+  if(!r||!r.ok){ const yrs=Math.ceil((Date.now()-parseYmd(from))/(365*864e5));
+    const u2=`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=${yrs<=1?'1y':yrs<=2?'2y':yrs<=5?'5y':yrs<=10?'10y':'max'}&interval=1d&events=div`;
+    try{ r=await fetchT(u2,{},25000); txt=await r.text(); }catch(e){ throw new Error('fikk ikke kontakt via mellomstasjonen'); } }
   if(/^Mellomstasjonen virker/.test(txt)&&!/v2/.test(txt)){ DB.proxyOld=true; save(); throw new Error('mellomstasjonen har gammel kode'); }
   let j; try{ j=JSON.parse(txt); }catch(e){ throw new Error('Yahoo svarte '+r.status); }
   const res=j?.chart?.result?.[0];
