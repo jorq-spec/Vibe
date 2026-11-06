@@ -489,8 +489,9 @@ function pendingDivs(C){
       const pay=d.payDate||d.exDate; if(pay>today()) continue;          // not paid yet
       for(const a of DB.accounts){
         const q=qtyHeld(s.id,a.id,d.exDate); if(q<=0) continue;
-        if((DB.dismissed[s.id]||[]).includes(d.exDate+'|'+a.id)) continue;
-        const have=DB.tx.some(t=>t.type==='div'&&t.secId===s.id&&t.accId===a.id&&(t.exDate===d.exDate||Math.abs(parseYmd(t.date)-parseYmd(pay))<12*864e5));
+        const near=(x,y)=>x&&y&&Math.abs(parseYmd(x)-parseYmd(y))<=3*864e5;   // old Yahoo dates could be a day off
+        if((DB.dismissed[s.id]||[]).some(k=>k.split('|')[1]===a.id&&near(k.split('|')[0],d.exDate))) continue;
+        const have=DB.tx.some(t=>t.type==='div'&&t.secId===s.id&&t.accId===a.id&&(near(t.exDate,d.exDate)||Math.abs(parseYmd(t.date)-parseYmd(pay))<12*864e5));
         if(have) continue;
         out.push({secId:s.id, accId:a.id, exDate:d.exDate, payDate:pay, amount:d.amount, cur:d.cur||s.divCur||s.cur, qty:q});
       }
@@ -558,6 +559,10 @@ async function refreshAll(manual=true){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 /* Once a day on its own, when the app opens. */
 function autoRefresh(){
+  /* once: price history fetched from Yahoo before 6 Nov 2026 was dated one day early — fetch it again */
+  if(!DB.yDateFix){ DB.yDateFix=1;
+    let n=0; DB.secs.forEach(s=>{ if(s.priceVia==='Yahoo'||(DB.divCache[s.id]||{}).src==='Yahoo'){ delete s.hist; delete s.priceTs; if((DB.divCache[s.id]||{}).src==='Yahoo') delete DB.divCache[s.id]; n++; } });
+    if(n){ DB.lastRefresh=''; DB.lastTry=0; } save(); }
   const last=DB.lastRefresh||''; if(last.slice(0,10)===today()) return;
   if(DB.lastTry&&Date.now()-DB.lastTry<10*60e3) return;   // don't hammer when it keeps failing
   DB.lastTry=Date.now();
@@ -593,7 +598,7 @@ async function liveTick(force){
       try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
         if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; s.priceTs=Date.now(); s.priceFetched=today();
-          if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[iso.slice(0,10)]=Math.round(p*1e4)/1e4; }
+          if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[new Date((m.regularMarketTime+(Number(m.gmtoffset)||0))*1000).toISOString().slice(0,10)]=Math.round(p*1e4)/1e4; }
           n++; } else fail.push(s.name);
       }catch(e){ fail.push(s.name); }
     }
@@ -1234,7 +1239,10 @@ async function yahoo(s){
   if(!res){ const d=j?.chart?.error?.description||('Yahoo svarte '+r.status); throw new Error(/no data|not found|delisted/i.test(d)?`Yahoo kjenner ikke ${sym}`:d); }
   const ts=res.timestamp||[], cl=res.indicators?.quote?.[0]?.close||[];
   s.hist=s.hist||{};
-  const ymdUTC=x=>new Date(x*1000).toISOString().slice(0,10);
+  /* Yahoo stamps daily bars at the exchange's local midnight (23:00 UTC the day before for Oslo),
+     so dates must be read in the exchange's time zone, not UTC */
+  const off=Number(res.meta?.gmtoffset)||0;
+  const ymdUTC=x=>new Date((x+off)*1000).toISOString().slice(0,10);
   ts.forEach((x,i)=>{ if(cl[i]>0) s.hist[ymdUTC(x)]=Math.round(cl[i]*1e4)/1e4; });
   const divs=Object.values(res.events?.dividends||{}).map(d=>({exDate:ymdUTC(d.date),payDate:'',amount:Number(d.amount),cur:(res.meta?.currency||s.cur||'NOK').toUpperCase()})).filter(d=>d.amount>0).sort((a,b)=>a.exDate.localeCompare(b.exDate));
   /* keep what earlier, longer fetches found */
