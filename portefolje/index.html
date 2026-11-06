@@ -536,7 +536,7 @@ async function refreshAll(manual=true){
     /* a worker flagged as old may have been updated since — check again (cheap, no quota) */
     if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
-    const held=compute().pos;
+    const held=heldAll();
     /* what you own now first, so the free daily quota goes where it matters */
     const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
     let ok=0, fail=[], later=0; const log=[];
@@ -577,6 +577,8 @@ function osloNow(){
   const g=k=>(f.find(x=>x.type===k)||{}).value; return {wd:g('weekday'), min:+g('hour')*60+ +g('minute')};
 }
 function marketOpen(){ const o=osloNow(); return !['Sat','Sun'].includes(o.wd)&&o.min>=9*60&&o.min<=16*60+50; }
+/* what you own across stocks AND funds, whichever tab (Alt/Aksjer/Fond) is showing */
+function heldAll(){ const sc=DB.settings.scope; DB.settings.scope='all'; try{ return compute().pos; } finally{ DB.settings.scope=sc; } }
 let liveBusy=false, liveLast=0;
 async function liveTick(force){
   if(liveBusy||refreshing||document.visibilityState!=='visible') return;
@@ -584,7 +586,7 @@ async function liveTick(force){
   if(!force&&Date.now()-liveLast<4.5*60e3) return;
   liveBusy=true; liveLast=Date.now();
   try{
-    const held=compute().pos, bucket=Math.floor(Date.now()/3e5); let n=0;
+    const held=heldAll(), bucket=Math.floor(Date.now()/3e5); let n=0, fail=[];
     for(const s of DB.secs){
       if(!held[s.id]) continue; const sym=yahooSymbol(s); if(!sym) continue;
       if(eodFirst()&&eodSymbol(s)) continue;
@@ -592,9 +594,10 @@ async function liveTick(force){
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
         if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; s.priceTs=Date.now(); s.priceFetched=today();
           if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[iso.slice(0,10)]=Math.round(p*1e4)/1e4; }
-          n++; }
-      }catch(e){}
+          n++; } else fail.push(s.name);
+      }catch(e){ fail.push(s.name); }
     }
+    DB.liveLog={at:new Date().toISOString(), ok:n, fail};
     if(n){ save(); render(); }
   } finally { liveBusy=false; }
 }
@@ -933,7 +936,7 @@ function calDaySheet(k){
     <div class="num tiny ${cls(m.gain)}">${m.pct!=null?pct(m.pct*100):''}</div>
     <div class="num tiny muted" style="margin-top:4px">kurs ${pxTxt(m)}${m.qty>1e-3?` · ${qtyTxt(m.qty)} stk`:' · solgt'}</div></div>`;
   const best=mv[0], worst=mv.length>1?mv[mv.length-1]:null;
-  const sh=openSheet(`<h3>${esc(prettyDate(k))}</h3><p class="sub">${x?`${isToday?'Verdi nå':'Verdi ved dagens slutt'}: ${kr(x.value)}`:'Før første handel'}</p>
+  const sh=openSheet(`<h3>${esc(prettyDate(k))}</h3><p class="sub">${x?`${isToday?'Verdi nå':'Verdi ved dagens slutt'}: ${kr(x.value)}`:'Før første handel'}${isToday&&typeof lastUpdateText==='function'?`<br><span class="tiny">${esc(lastUpdateText())}${DB.liveLog&&DB.liveLog.fail&&DB.liveLog.fail.length?` · fikk ikke ${DB.liveLog.fail.length} sist`:''}</span>`:''}</p>
     ${x?`<div class="kv" style="margin:0 0 12px"><div><span>Kursendring</span><b class="num ${cls(x.gain)}">${sgn(x.gain)} kr</b></div><div><span>Utbytte</span><b class="num">${kr(x.div)}</b></div></div>`:''}
     ${best?`<div class="two" style="margin:0 0 12px">${card(best,best.gain>=0?'▲ Beste':'Minst ned')}${worst?card(worst,worst.gain<0?'▼ Verste':'Minst opp'):''}</div>`:''}
     ${mv.length>2?`<details style="margin:0 0 12px"><summary class="tiny" style="cursor:pointer;font-weight:650">Alle ${mv.length} denne dagen</summary>
