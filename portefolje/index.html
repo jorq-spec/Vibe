@@ -912,15 +912,17 @@ function secDayMoves(k){
   const fxOnD=(s,d)=>{ if(s.cur==='NOK') return 1; const H=(DB.fxHist||{})[s.cur]; const ks=H?Object.keys(H).sort():[]; return (ks.length?lastOn(H,ks,d):undefined)||fxNow(s.cur)||1; };
   const out=[];
   for(const sid of new Set([...Object.keys(qE),...Object.keys(qP)])){
-    const s=sec(sid); if(!s) continue; const e=qE[sid]||0, p=qP[sid]||0; if(e<=1e-9&&p<=1e-9) continue;
+    const s=sec(sid); if(!s) continue; const e=qE[sid]||0, p=qP[sid]||0; if(e<=1e-3&&p<=1e-3) continue;   // leftovers from rounding are not holdings
     const pk=pxOn(s,k), pp=pxOn(s,prevD); if(pk==null) continue;
     const vE=e*pk*fxOnD(s,k), vP=pp!=null?p*pp*fxOnD(s,prevD):0;
     const gain=vE-vP-(flow[sid]||0);
     const pct=pp?(pk*fxOnD(s,k))/(pp*fxOnD(s,prevD))-1:null;
-    out.push({s, gain, pct, value:vE});
+    out.push({s, gain, pct, value:vE, px:pk, qty:e});
   }
   return out.sort((a,b)=>b.gain-a.gain);
 }
+const pxTxt=m=>`${nf(m.px,m.px<10?3:2)}${m.s.cur&&m.s.cur!=='NOK'?' '+m.s.cur:''}`;
+const qtyTxt=q=>nf(q,Math.abs(q-Math.round(q))<1e-6?0:Math.min(4,(String(+q.toFixed(4)).split('.')[1]||'').length));
 function calDaySheet(k){
   const S=dailySeries(), x=S.days.find(d=>d.d===k);
   const mv=x?secDayMoves(k).filter(m=>Math.abs(m.gain)>0.5||m.pct):[];
@@ -929,14 +931,14 @@ function calDaySheet(k){
     <b style="display:block;margin:2px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.s.name)}</b>
     <div class="num ${cls(m.gain)}" style="font-weight:750;font-size:18px">${sgn(m.gain)} kr</div>
     <div class="num tiny ${cls(m.gain)}">${m.pct!=null?pct(m.pct*100):''}</div>
-    <div class="num tiny muted" style="margin-top:4px">${isToday?'nå':'verdi'} ${kr(m.value)}</div></div>`;
+    <div class="num tiny muted" style="margin-top:4px">kurs ${pxTxt(m)}${m.qty>1e-3?` · ${qtyTxt(m.qty)} stk`:' · solgt'}</div></div>`;
   const best=mv[0], worst=mv.length>1?mv[mv.length-1]:null;
   const sh=openSheet(`<h3>${esc(prettyDate(k))}</h3><p class="sub">${x?`${isToday?'Verdi nå':'Verdi ved dagens slutt'}: ${kr(x.value)}`:'Før første handel'}</p>
     ${x?`<div class="kv" style="margin:0 0 12px"><div><span>Kursendring</span><b class="num ${cls(x.gain)}">${sgn(x.gain)} kr</b></div><div><span>Utbytte</span><b class="num">${kr(x.div)}</b></div></div>`:''}
     ${best?`<div class="two" style="margin:0 0 12px">${card(best,best.gain>=0?'▲ Beste':'Minst ned')}${worst?card(worst,worst.gain<0?'▼ Verste':'Minst opp'):''}</div>`:''}
     ${mv.length>2?`<details style="margin:0 0 12px"><summary class="tiny" style="cursor:pointer;font-weight:650">Alle ${mv.length} denne dagen</summary>
       ${mv.map(m=>`<div class="spread tiny" data-sid="${esc(m.s.id)}" style="padding:7px 0;border-top:1px solid var(--soft);cursor:pointer"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.s.name)}</span>
-        <span class="num ${cls(m.gain)}" style="width:72px;text-align:right">${sgn(m.gain)}</span><span class="num ${cls(m.gain)}" style="width:62px;text-align:right">${m.pct!=null?pct(m.pct*100):''}</span><span class="num muted" style="width:84px;text-align:right">${kr(m.value)}</span></div>`).join('')}</details>`:''}
+        <span class="num ${cls(m.gain)}" style="width:72px;text-align:right">${sgn(m.gain)}</span><span class="num ${cls(m.gain)}" style="width:62px;text-align:right">${m.pct!=null?pct(m.pct*100):''}</span><span class="num muted" style="width:96px;text-align:right">${pxTxt(m)}<br>${m.qty>1e-3?qtyTxt(m.qty)+' stk':'solgt'}</span></div>`).join('')}</details>`:''}
     ${x&&!S.hasHist?'<p class="tiny muted">Beste og verste krever kurshistorikk, som hentes via mellomstasjonen.</p>':''}
     ${x&&x.events.length?x.events.map(txLine).join(''):'<p class="tiny muted">Ingen transaksjoner denne dagen.</p>'}`);
   if(sh) sh.addEventListener('click',e=>{ const t=e.target.closest('[data-sid]'); if(!t) return; closeSheet(); setTimeout(()=>secSheet(t.dataset.sid),250); });
