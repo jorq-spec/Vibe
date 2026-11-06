@@ -563,7 +563,9 @@ function autoRefresh(){
   if(!DB.yDateFix){ DB.yDateFix=1;
     let n=0; DB.secs.forEach(s=>{ if(s.priceVia==='Yahoo'||(DB.divCache[s.id]||{}).src==='Yahoo'){ delete s.hist; delete s.priceTs; if((DB.divCache[s.id]||{}).src==='Yahoo') delete DB.divCache[s.id]; n++; } });
     if(n){ DB.lastRefresh=''; DB.lastTry=0; } save(); }
-  const last=DB.lastRefresh||''; if(last.slice(0,10)===today()) return;
+  /* history missing for something you own (e.g. after the refetch above was cut short) → fetch again, even if today's refresh ran */
+  const held=heldAll(), noHist=DB.secs.some(s=>held[s.id]&&s.ticker&&(s.priceVia||s.priceSrc)&&Object.keys(s.hist||{}).length<3);
+  const last=DB.lastRefresh||''; if(last.slice(0,10)===today()&&!noHist) return;
   if(DB.lastTry&&Date.now()-DB.lastTry<10*60e3) return;   // don't hammer when it keeps failing
   DB.lastTry=Date.now();
   if(!DB.secs.length) return;
@@ -597,7 +599,7 @@ async function liveTick(force){
       if(eodFirst()&&eodSymbol(s)) continue;
       try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
-        if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; s.priceTs=Date.now(); s.priceFetched=today();
+        if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo';
           if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[new Date((m.regularMarketTime+(Number(m.gmtoffset)||0))*1000).toISOString().slice(0,10)]=Math.round(p*1e4)/1e4; }
           n++; } else fail.push(s.name);
       }catch(e){ fail.push(s.name); }
@@ -648,7 +650,8 @@ function dailySeries(){
     let value=0, priced=true;
     for(const [sid,q] of Object.entries(qty)){ if(q<=1e-9) continue; const s=sec(sid); if(!s) continue;
       let px=hk[sid].length?lastOn(s.hist,hk[sid],d):undefined;
-      if(px==null){ px=lastTradePx[sid]; priced=false; }
+      /* no history at all: hold today's price flat, so the day it arrives isn't counted as a huge gain */
+      if(px==null){ px=!hk[sid].length&&num(s.price)>0?num(s.price):lastTradePx[sid]; priced=false; }
       if(d===end&&num(s.price)>0) px=num(s.price);
       let fx=1; if(s.cur!=='NOK'){ const H=(DB.fxHist||{})[s.cur]; fx=(H&&fxk[s.cur]?lastOn(H,fxk[s.cur],d):undefined)||fxNow(s.cur)||1; }
       value+=q*(px||0)*fx; }
@@ -916,7 +919,7 @@ function secDayMoves(k){
     else if(t.type==='sell'){ qE[sid]=(qE[sid]||0)-q; if(!on) qP[sid]=(qP[sid]||0)-q; else flow[sid]=(flow[sid]||0)-txAmount(t); }
     else if(t.type==='split'){ const r=num(t.ratio)||1; qE[sid]=(qE[sid]||0)*r; qP[sid]=(qP[sid]||0)*r; }
   }
-  const pxOn=(s,d)=>{ if(d===today()&&num(s.price)>0) return num(s.price); const ks=Object.keys(s.hist||{}).sort(); return ks.length?lastOn(s.hist,ks,d):undefined; };
+  const pxOn=(s,d)=>{ if(d===today()&&num(s.price)>0) return num(s.price); const ks=Object.keys(s.hist||{}).sort(); return ks.length?lastOn(s.hist,ks,d):(num(s.price)>0?num(s.price):undefined); };
   const fxOnD=(s,d)=>{ if(s.cur==='NOK') return 1; const H=(DB.fxHist||{})[s.cur]; const ks=H?Object.keys(H).sort():[]; return (ks.length?lastOn(H,ks,d):undefined)||fxNow(s.cur)||1; };
   const out=[];
   for(const sid of new Set([...Object.keys(qE),...Object.keys(qP)])){
@@ -1257,7 +1260,7 @@ async function getQuote(s){
   if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
   if(yahooReady()&&isFund(s)&&!fundYahoo(s)) await resolveFundYahoo(s);
   if(yahooReady()&&yahooFor(s)){
-    if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
+    if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price&&Object.keys(s.hist||{}).length>2) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
     try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
   }
   if(!dataReady()||eodFirst()) return null;
