@@ -884,32 +884,39 @@ function viewCal(){
   const S=dailySeries();
   if(!S.days.length) return `<div class="empty"><h3>Ingenting å vise ennå</h3><p>Kalenderen viser hvor mye porteføljen gikk opp eller ned hver dag, når du har lagt inn handler.</p></div>`;
   const now=new Date(); calM=calM||{y:now.getFullYear(),m:now.getMonth()};
-  const by={}; S.days.forEach(x=>by[x.d]=x);
+  const by={}, prevV={}; S.days.forEach((x,i)=>{ by[x.d]=x; prevV[x.d]=i?S.days[i-1].value:0; });
+  const P=!!DB.settings.calPct;
+  /* percent for a day = the day's price move relative to what you held at the start of it */
+  const dp=x=>{ const v=prevV[x.d]; return v>0?x.gain/v*100:null; };
   const first=new Date(calM.y,calM.m,1), dim=new Date(calM.y,calM.m+1,0).getDate(), lead=(first.getDay()+6)%7;
   const keys=Array.from({length:dim},(_,i)=>`${calM.y}-${pad(calM.m+1)}-${pad(i+1)}`);
   const inMonth=keys.map(k=>by[k]).filter(Boolean);
   const mGain=inMonth.reduce((s,x)=>s+x.gain,0), mDiv=inMonth.reduce((s,x)=>s+x.div,0);
   const startV=(by[addDays(keys[0],-1)]||inMonth[0]||{}).value||0;
-  const maxAbs=Math.max(1,...inMonth.map(x=>Math.abs(x.gain)));
+  const val=x=>P?(dp(x)||0):x.gain;
+  const maxAbs=Math.max(P?0.05:1,...inMonth.map(x=>Math.abs(val(x))));
   const cells=[]; for(let i=0;i<lead;i++) cells.push('<div class="cc empty"></div>');
-  keys.forEach((k,i)=>{ const x=by[k], g=x?x.gain:0, has=x&&Math.abs(g)>=0.5, a=has?Math.min(1,.18+Math.abs(g)/maxAbs*.82):0;
+  keys.forEach((k,i)=>{ const x=by[k], g=x?val(x):0, has=x&&(P?Math.abs(x.gain)>=0.5&&dp(x)!=null&&Math.abs(g)>=0.005:Math.abs(g)>=0.5), a=has?Math.min(1,.18+Math.abs(g)/maxAbs*.82):0;
     const col=g>=0?'57,255,136':'255,79,109';
     cells.push(`<button class="cc${k===today()?' now':''}${x?'':' off'}" data-act="calday" data-k="${k}" ${has?`style="background:rgba(${col},${(a*.28).toFixed(3)});box-shadow:inset 0 0 0 1px rgba(${col},${(a*.7).toFixed(3)}),0 0 ${Math.round(a*12)}px rgba(${col},${(a*.45).toFixed(3)})"`:''}>
-      <span class="cd">${i+1}</span>${has?`<span class="cg" style="color:rgb(${col})">${g>0?'+':'−'}${compact(Math.abs(g))}</span>`:''}
+      <span class="cd">${i+1}</span>${has?`<span class="cg" style="color:rgb(${col})">${g>0?'+':'−'}${P?nf(Math.abs(g),Math.abs(g)<0.1?2:1)+'%':compact(Math.abs(g))}</span>`:''}
       <span class="cm">${x&&x.events.some(t=>t.type==='buy'||t.type==='sell')?'<i class="ev"></i>':''}${x&&x.div?'<i class="dv"></i>':''}</span></button>`); });
   const MONL=['Januar','Februar','Mars','April','Mai','Juni','Juli','August','September','Oktober','November','Desember'];
   return `<div class="neon cal">
     <div class="spread" style="align-items:center"><button class="nav" data-act="calm" data-d="-1" aria-label="Forrige måned">‹</button>
       <div style="text-align:center"><div class="nlbl">${MONL[calM.m]} ${calM.y}</div>
-        <div class="num" style="font-size:20px;font-weight:750;color:${mGain>=0?NEON.up:NEON.down};text-shadow:0 0 12px currentColor">${sgn(mGain)} kr</div>
-        <div class="tiny num" style="color:${NEON.axis}">${startV?pct(mGain/startV*100):''}${mDiv?` · utbytte ${kr(mDiv)}`:''}</div></div>
+        ${P?`<div class="num" style="font-size:20px;font-weight:750;color:${mGain>=0?NEON.up:NEON.down};text-shadow:0 0 12px currentColor">${startV?pct(mGain/startV*100):'–'}</div>
+        <div class="tiny" style="color:${NEON.axis}">endring i måneden</div>`
+        :`<div class="num" style="font-size:20px;font-weight:750;color:${mGain>=0?NEON.up:NEON.down};text-shadow:0 0 12px currentColor">${sgn(mGain)} kr</div>
+        <div class="tiny num" style="color:${NEON.axis}">${startV?pct(mGain/startV*100):''}${mDiv?` · utbytte ${kr(mDiv)}`:''}</div>`}</div>
       <button class="nav" data-act="calm" data-d="1" aria-label="Neste måned">›</button></div>
+    <div class="nchips" style="justify-content:center;margin:8px 0 2px"><button data-act="calunit" data-k="kr" aria-pressed="${!P}" style="flex:0 0 64px">kr</button><button data-act="calunit" data-k="pct" aria-pressed="${P}" style="flex:0 0 64px">%</button></div>
     <div class="cw">${['M','T','O','T','F','L','S'].map(d=>`<span>${d}</span>`).join('')}</div>
     <div class="cgrid">${cells.join('')}</div>
     <div class="nlegend" style="margin-top:10px"><span><i style="background:${NEON.up}"></i>Opp</span><span><i style="background:${NEON.down}"></i>Ned</span><span><i style="background:#fff"></i>Handel</span><span><i style="background:${NEON.c}"></i>Utbytte</span></div>
     ${!S.hasHist?`<p class="nnote">Daglige tall krever kurshistorikk, som hentes via mellomstasjonen. Til da ser du bare handler og utbytte her.</p>`:''}
   </div>
-  <p class="note">Endringen per dag er kursbevegelse i kroner: verdiendring minus det du kjøpte eller solgte for den dagen. Utbytte vises for seg.</p>`;
+  <p class="note">${P?'Prosent per dag er kursbevegelsen den dagen delt på verdien ved starten av dagen, så kjøp og salg teller ikke med.':'Endringen per dag er kursbevegelse i kroner: verdiendring minus det du kjøpte eller solgte for den dagen. Utbytte vises for seg.'}</p>`;
 }
 /* how each holding moved on one day: kroner, percent and value */
 function secDayMoves(k){
@@ -1907,6 +1914,7 @@ document.addEventListener('click',e=>{
   else if(a==='dcmode'){ dcMode=b.dataset.k; render(); }
   else if(a==='dcest'){ DB.settings.dcEst=!DB.settings.dcEst; save(); render(); }
   else if(a==='range'){ chartRange=b.dataset.k; render(); }
+  else if(a==='calunit'){ DB.settings.calPct=b.dataset.k==='pct'; save(); render(); }
   else if(a==='calm'){ calM.m+=+b.dataset.d; if(calM.m<0){calM.m=11;calM.y--;} if(calM.m>11){calM.m=0;calM.y++;} render(); }
   else if(a==='calday') calDaySheet(b.dataset.k);
   else if(a==='ai') runAi();
