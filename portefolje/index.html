@@ -95,6 +95,7 @@ html.dark .tag.new{background:#3A2E12;color:#F2BE55}
 .legend{display:grid;gap:6px}
 .legend div{display:flex;align-items:center;gap:8px;font-size:14px}
 .legend i{width:10px;height:10px;border-radius:3px;flex:none}
+.demob{display:inline-block;vertical-align:middle;font-size:11px;font-weight:800;letter-spacing:.08em;padding:2px 7px;border-radius:6px;background:#FFD23F;color:#1a1400;margin-left:4px}
 .legend .tap{cursor:pointer;margin:-4px -6px;padding:4px 6px;border-radius:8px}.legend .tap:active{background:var(--soft)}.legend .chev{font-style:normal;color:var(--muted);margin-left:2px}
 .legend span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
@@ -182,7 +183,42 @@ input.bad,select.bad{border-color:var(--down)!important}
 /* ============================================================
    Data
    ============================================================ */
-const KEY='portefolje_v1';
+/* Demo mode keeps its own made-up portfolio under a separate key, so your real data is never touched */
+let DEMO=false; try{ DEMO=localStorage.getItem('portefolje_mode')==='demo'; }catch(e){}
+const KEY=DEMO?'portefolje_demo':'portefolje_v1';
+function demoDB(){
+  let seed=20261108; const rnd=()=>{ seed=(seed*1103515245+12345)%2147483648; return seed/2147483648; };
+  const p2=n=>String(n).padStart(2,'0'), Y=d=>`${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+  const now=new Date(); now.setHours(12,0,0,0);
+  const start=new Date(now); start.setFullYear(start.getFullYear()-3);
+  /* a seeded random walk on weekdays: same "history" every time demo mode is opened */
+  const walk=(p0,drift,vol)=>{ const h={}; let p=p0; for(let d=new Date(start); d<=now; d.setDate(d.getDate()+1)){
+      if(d.getDay()===0||d.getDay()===6) continue; p*=1+drift+vol*(rnd()+rnd()+rnd()-1.5); h[Y(d)]=Math.round(p*100)/100; } return h; };
+  const id=x=>'demo_'+x, ago=(m,dd=0)=>{ const d=new Date(now); d.setMonth(d.getMonth()-m); d.setDate(d.getDate()-dd); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1); return Y(d); };
+  const S=[
+    {id:id('nve'),name:'Nordvik Energi ASA',ticker:'',cur:'NOK',sector:'Energi',hist:walk(180,.00035,.017)},
+    {id:id('hav'),name:'Havbruk Norge ASA',ticker:'',cur:'NOK',sector:'Sjømat',hist:walk(64,.0002,.021)},
+    {id:id('glb'),name:'Global Indeks (demo)',ticker:'',cur:'NOK',kind:'fond',sector:'Globalt',hist:walk(240,.00038,.009)}];
+  S.forEach(x=>{ const k=Object.keys(x.hist).sort(), l=k[k.length-1]; x.price=x.hist[l]; x.priceAt=new Date().toISOString(); x.priceSrc='demo'; });
+  const px=(s,d)=>{ const k=Object.keys(s.hist).filter(x=>x<=d).sort(); return s.hist[k[k.length-1]]; };
+  const ask={id:id('ask'),name:'Aksjesparekonto',type:'ask',cash:'keep'}, fk={id:id('fk'),name:'Fondskonto',type:'ord',cash:'keep'};
+  const tx=[]; let n=0; const T=o=>tx.push({id:id('t'+(++n)),created:1e12+n,fee:'',fx:'',cur:'NOK',...o});
+  const buy=(s,a,m,q,dd)=>{ const d=ago(m,dd); T({type:'buy',date:d,secId:s.id,accId:a.id,qty:String(q),price:String(px(s,d)),fee:s.kind?'':'39'}); };
+  T({type:'dep',date:ago(35,3),accId:ask.id,amount:'60000'}); T({type:'dep',date:ago(35,3),accId:fk.id,amount:'30000'});
+  buy(S[0],ask,35,150); buy(S[1],ask,33,400); buy(S[2],fk,35,60);
+  for(let m=34;m>=1;m--){ T({type:'dep',date:ago(m,-2),accId:fk.id,amount:'2000'}); buy(S[2],fk,m,+(2000/px(S[2],ago(m,-2))).toFixed(4),-2); }
+  T({type:'dep',date:ago(18),accId:ask.id,amount:'15000'}); buy(S[0],ask,18,60,-1);
+  { const d=ago(9); T({type:'sell',date:d,secId:S[1].id,accId:ask.id,qty:'150',price:String(px(S[1],d)),fee:'39'}); }
+  buy(S[1],ask,4,120);
+  /* dividends: energy twice a year, seafood once — the calendar gets announced ones too */
+  const divs={}; const D=(s,m,ps,held)=>{ const ex=ago(m), pay=ago(m,-14); (divs[s.id]=divs[s.id]||[]).push({exDate:ex,payDate:pay,amount:ps,cur:'NOK'}); if(held&&pay<=Y(now)) T({type:'div',date:pay,exDate:ex,secId:s.id,accId:ask.id,qty:String(held),perShare:String(ps),tax:''}); };
+  [30,24,18,12,6].forEach((m,i)=>D(S[0],m,4.5+i*.5,m>=18?150:210)); D(S[0],-1,7,0);
+  [26,14,2].forEach((m,i)=>D(S[1],m,2.2+i*.4,m>9?400:m>4?250:370)); D(S[1],-6,3.4,0);
+  const divCache={}; Object.entries(divs).forEach(([k,v])=>divCache[k]={at:new Date().toISOString(),src:'demo',items:v});
+  return {v:1,demo:true,accounts:[ask,fk],secs:S,tx,fx:{},divCache,dismissed:{},yDateFix:1,lastRefresh:new Date().toISOString(),
+    settings:{theme:'light',provider:'',apiKey:'',gemKey:'',model:''}};
+}
+function setDemo(on){ try{ if(on) localStorage.setItem('portefolje_mode','demo'); else localStorage.removeItem('portefolje_mode'); if(on) localStorage.removeItem('portefolje_demo'); }catch(e){} location.reload(); }
 const TYPES={buy:'Kjøp',sell:'Salg',div:'Utbytte',split:'Splitt',dep:'Innskudd',wd:'Uttak'};
 const isCashTx=t=>t.type==='dep'||t.type==='wd';
 const CURS=['NOK','USD','EUR','SEK','DKK','GBP'];
@@ -191,6 +227,7 @@ let DB;
 try{ DB=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ DB=null; }
 function blank(){ return {v:1,accounts:[{id:uid(),name:'Aksjekonto',type:'ord'}],secs:[],tx:[],fx:{},divCache:{},dismissed:{},
   settings:{theme:'light',provider:'',apiKey:'',gemKey:'',model:''}}; }
+if(DEMO&&(!DB||!DB.demo)){ DB=demoDB(); try{ const real=JSON.parse(localStorage.getItem('portefolje_v1')||'{}'); if(real.settings){ DB.settings.theme=real.settings.theme||'light'; DB.settings.gemKey=real.settings.gemKey||''; } }catch(e){} }
 if(!DB||!Array.isArray(DB.tx)) DB=blank();
 function normalize(){ const b=blank();
   for(const k of Object.keys(b)) if(DB[k]==null) DB[k]=b[k];
@@ -529,6 +566,7 @@ async function refreshSec(s, verbose){
   return msgs.join(' · ');
 }
 async function refreshAll(manual=true){
+  if(DEMO){ if(manual) toast('Demomodus: kursene er oppdiktet og hentes ikke'); return; }
   if(refreshing) return; refreshing=true;
   const btn=document.querySelector('[data-act=refresh]'); if(btn) btn.innerHTML='<span class="spin"></span>';
   try{
@@ -561,6 +599,7 @@ async function refreshAll(manual=true){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 /* Once a day on its own, when the app opens. */
 function autoRefresh(){
+  if(DEMO) return;
   /* once: price history fetched from Yahoo before 6 Nov 2026 was dated one day early — fetch it again */
   if(!DB.yDateFix){ DB.yDateFix=1;
     let n=0; DB.secs.forEach(s=>{ if(s.priceVia==='Yahoo'||(DB.divCache[s.id]||{}).src==='Yahoo'){ delete s.hist; delete s.priceTs; if((DB.divCache[s.id]||{}).src==='Yahoo') delete DB.divCache[s.id]; n++; } });
@@ -590,6 +629,7 @@ function marketOpen(){ const o=osloNow(); return !['Sat','Sun'].includes(o.wd)&&
 function heldAll(){ const sc=DB.settings.scope; DB.settings.scope='all'; try{ return compute().pos; } finally{ DB.settings.scope=sc; } }
 let liveBusy=false, liveLast=0;
 async function liveTick(force){
+  if(DEMO) return;
   if(liveBusy||refreshing||document.visibilityState!=='visible') return;
   if(!yahooReady()||!(force||marketOpen())) return;
   if(!force&&Date.now()-liveLast<4.5*60e3) return;
@@ -1377,7 +1417,7 @@ function sourcesSheet(){
 let view='home', txFilter='all', divYear=null;
 function topbar(title, sub, back){
   return `${back?`<button class="ib" data-act="${back}" aria-label="Tilbake">${ICON.back}</button>`:''}
-    <h1>${esc(title)}${sub?`<small>${esc(sub)}</small>`:''}</h1>
+    <h1>${esc(title)}${DEMO?' <span class="demob">DEMO</span>':''}${sub?`<small>${esc(sub)}</small>`:''}</h1>
     <button class="ib" data-act="refresh" aria-label="Oppdater kurser og utbytte">${ICON.refresh}</button>
     <button class="ib" data-act="theme" aria-label="${DB.settings.theme==='dark'?'Lyst tema':'Mørkt tema'}">${DB.settings.theme==='dark'?ICON.sun:ICON.moon}</button>
     <button class="ib" data-act="menu" aria-label="Meny">${ICON.menu}</button>`;
@@ -1402,6 +1442,7 @@ function render(){
   $('#fabLbl').textContent=(view==='div'||view==='divcal')?'Nytt utbytte':'Ny transaksjon';
 }
 function lastUpdateText(){
+  if(DEMO) return 'Oppdiktede eksempeltall';
   const ts=DB.secs.map(s=>s.priceAt).filter(Boolean).sort(); const l=ts[ts.length-1];
   if(!l) return 'Kurser ikke hentet ennå';
   const d=new Date(l), loc=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -1837,6 +1878,7 @@ function cashAdjustSheet(accId){
 }
 function menuSheet(){
   const sh=openSheet(`<h3>Meny</h3><p class="sub">Alt lagres bare på denne enheten. Ta backup innimellom.</p>
+    <button class="btn full" style="margin-bottom:8px;${DEMO?'border-color:var(--acc);color:var(--acc)':''}" data-m="demo">${DEMO?'Avslutt demomodus – tilbake til din portefølje':'Demomodus – vis appen med eksempeldata'}</button>
     <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="src">Datakilder og nøkler</button>
     <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer og fond (${DB.secs.length})</button>
@@ -1847,6 +1889,7 @@ function menuSheet(){
     ${!DB.tx.length?'<button class="btn full" style="margin-bottom:8px" data-m="ex">Legg inn eksempeldata</button>':''}
     <button class="btn danger full" data-m="wipe">Slett alt</button>`);
   const m=k=>sh.querySelector(`[data-m="${k}"]`);
+  m('demo').onclick=()=>{ if(DEMO) setDemo(false); else if(confirmBox('Åpne demomodus? Appen viser da en oppdiktet portefølje. Dine egne tall blir liggende urørt, og du kommer tilbake til dem via Meny.')) setDemo(true); };
   m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet; m('import').onclick=importSheet;
   m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer og fond</h3><p class="sub">Trykk for å endre navn, ticker/ISIN, valuta eller sektor.</p>
       ${DB.secs.map(s=>`<button class="item" data-id="${s.id}"><div class="b"><b>${esc(s.name)}</b><span>${esc(s.ticker||'uten ticker')} · ${s.cur}${s.divCur&&s.divCur!==s.cur?' · utbytte i '+s.divCur:''}${s.sector?' · '+esc(s.sector):''}</span></div></button>`).join('')}
