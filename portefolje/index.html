@@ -2041,17 +2041,28 @@ function viewFollow(C){
   if(!DB.secs.length) return banner+`<div class="empty"><h3>Ingen aksjer lagt til ennå</h3>
       <p>Legg til aksjer du vil følge med på, også slike du ikke eier, og sett grenser for varsling.</p>
       <button class="btn solid" data-act="watchadd">Følg en aksje</button></div>`;
-  const withA=DB.secs.filter(s=>s.alerts&&s.alerts.length), rest=DB.secs.filter(s=>!(s.alerts&&s.alerts.length));
   const held=C.pos;
+  const sortK=DB.settings.followSort||'alerts';
+  const SORTS=[['alerts','Grenser først'],['name','Navn'],['change','Endring'],['price','Kurs']];
+  const chips=`<div class="nchips" style="margin:0 0 12px">${SORTS.map(([k,l])=>`<button data-act="followsort" data-k="${k}" aria-pressed="${k===sortK}">${l}</button>`).join('')}</div>`;
+  const byName=(a,b)=>a.name.localeCompare(b.name,'nb');
+  const cmp={ name:byName,
+    change:(a,b)=>{ const da=watchDayPct(a), db=watchDayPct(b); if(da==null&&db==null) return byName(a,b); if(da==null) return 1; if(db==null) return -1; return db-da; },
+    price:(a,b)=>{ const pa=num(a.price), pb=num(b.price); if(!(pa>0)&&!(pb>0)) return byName(a,b); if(!(pa>0)) return 1; if(!(pb>0)) return -1; return pb-pa; } };
   const rowFor=s=>{ const d=watchDayPct(s), hit=(s.alerts||[]).filter(r=>r.hit&&!r.off), px=num(s.price);
     return `<button class="item watchrow${hit.length?' hitrow':''}" data-act="watchedit" data-id="${esc(s.id)}">
       <div class="b"><b>${esc(s.name)}${hit.length?' <span class="tag new">⚠ utløst</span>':''}${held[s.id]?' <span class="tag" style="background:var(--acc-soft,#e6f4ef);color:var(--acc)">eier</span>':''}</b>
         <span>${px>0?`${nf(px,px<10?2:2)} ${esc(s.cur||'')}`:(s.ticker?'henter kurs…':'mangler ticker')}${d!=null?` · <span class="${d>=0?'up':'down'}">${pct(d)}</span> i dag`:''}${s.ticker?` · ${esc(s.ticker)}`:''}</span>
         ${alertSummary(s)}</div>
       <span class="chev">›</span></button>`; };
-  const sec1=withA.length?`<div class="sub" style="margin:2px 0 6px">Med grenser</div>${withA.map(rowFor).join('')}`:'';
-  const sec2=rest.length?`<div class="sub" style="margin:${withA.length?'14px':'2px'} 0 6px">${withA.length?'Uten grenser':'Dine aksjer og fond'}</div>${rest.map(rowFor).join('')}`:'';
-  return banner+sec1+sec2+`<button class="btn ghost full" style="margin-top:12px" data-act="watchadd">+ Følg en ny aksje</button>`;
+  let body;
+  if(sortK==='alerts'){
+    const withA=DB.secs.filter(s=>s.alerts&&s.alerts.length).slice().sort(byName), rest=DB.secs.filter(s=>!(s.alerts&&s.alerts.length)).slice().sort(byName);
+    const sec1=withA.length?`<div class="sub" style="margin:2px 0 6px">Med grenser</div>${withA.map(rowFor).join('')}`:'';
+    const sec2=rest.length?`<div class="sub" style="margin:${withA.length?'14px':'2px'} 0 6px">${withA.length?'Uten grenser':'Dine aksjer og fond'}</div>${rest.map(rowFor).join('')}`:'';
+    body=sec1+sec2;
+  } else { body=DB.secs.slice().sort(cmp[sortK]).map(rowFor).join(''); }
+  return banner+chips+body+`<button class="btn ghost full" style="margin-top:12px" data-act="watchadd">+ Følg en ny aksje</button>`;
 }
 function addFollowSec(o){ const s={id:uid(),name:o.name,ticker:o.ticker||'',cur:o.cur||'NOK',kind:o.kind||'aksje',sector:'',price:'',alerts:[]}; DB.secs.push(s); save(); render();
   if(typeof canFetch==='function'&&canFetch()&&s.ticker){ refreshSec(s).then(()=>{ save(); render(); }); } return s.id; }
@@ -2125,6 +2136,7 @@ document.addEventListener('click',e=>{
   else if(a==='wnotify') ensureNotify();
   else if(a==='gowatch'){ view='watch'; watchTab='list'; render(); scrollTo(0,0); }
   else if(a==='followtab'){ watchTab=b.dataset.k; render(); scrollTo(0,0); }
+  else if(a==='followsort'){ DB.settings.followSort=b.dataset.k; save(); render(); }
   else if(a==='dismissall'){ pendingDivs(compute()).forEach(p=>{ (DB.dismissed[p.secId]=DB.dismissed[p.secId]||[]).push(p.exDate+'|'+p.accId); }); save(); render(); toast('Ignorert'); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
