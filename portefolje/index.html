@@ -1397,13 +1397,16 @@ async function yahoo(s){
   return {price, date:when, time:res.meta?.regularMarketTime?new Date(res.meta.regularMarketTime*1000).toISOString():'', cur:(res.meta?.currency||'').toUpperCase()==='GBX'?'GBP':(res.meta?.currency||'').toUpperCase(), src:'Yahoo'};
 }
 async function getQuote(s){
-  if(eodFirst()&&eodSymbol(s)){ try{ return await getQuoteEod(s); }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
+  const eodReady=dataReady()&&eodSymbol(s);
+  /* Funds (ISIN) are fetched from EODHD first – Yahoo rarely has Norwegian funds. Stocks follow the prefer-setting. */
+  const eodPref=(eodFirst()||isFund(s))&&eodReady;
+  if(eodPref){ try{ return await getQuoteEod(s); }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
   if(yahooReady()&&isFund(s)&&!fundYahoo(s)) await resolveFundYahoo(s);
   if(yahooReady()&&yahooFor(s)){
     if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price&&Object.keys(s.hist||{}).length>2) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
     try{ return await yahoo(s); }catch(e){ s.yahooErr=e.message; if(!dataReady()) throw e; }
   }
-  if(!dataReady()||eodFirst()) return null;
+  if(!eodReady||eodPref) return null;   // EODHD already tried, or not set up
   return getQuoteEod(s);
 }
 async function getQuoteEod(s){
@@ -1454,7 +1457,7 @@ function sourcesSheet(){
       <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL} (for fond)</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
       <div class="two" style="margin-top:10px"><div class="f" style="margin:0"><label for="pcap">EODHD-oppslag per dag</label><input id="pcap" inputmode="numeric" value="${esc(st.eodCap||20)}"><p class="hint">20 på gratisplanen. Med betalt plan: skriv grensen fra planen din.</p></div>
-        <div class="f" style="margin:0"><label>Aksjer hentes først fra</label><div class="seg" id="pprefer" style="margin:0"><button type="button" data-k="yahoo" aria-pressed="${st.prefer!=='eodhd'}">Yahoo</button><button type="button" data-k="eodhd" aria-pressed="${st.prefer==='eodhd'}">EODHD</button></div><p class="hint">Den andre brukes hvis den første ikke har aksjen.</p></div></div>
+        <div class="f" style="margin:0"><label>Aksjer hentes først fra</label><div class="seg" id="pprefer" style="margin:0"><button type="button" data-k="yahoo" aria-pressed="${st.prefer!=='eodhd'}">Yahoo</button><button type="button" data-k="eodhd" aria-pressed="${st.prefer==='eodhd'}">EODHD</button></div><p class="hint">Gjelder aksjer. Den andre brukes hvis den første ikke har aksjen. Fond hentes alltid fra EODHD først.</p></div></div>
       ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0"><span id="pbudget">${budget()} av ${capDaily()} EODHD-oppslag igjen i dag.</span>${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
       ${DB.lastLog&&DB.lastLog.rows?`<details style="margin-top:8px"><summary class="tiny" style="cursor:pointer;font-weight:650">Siste henting (${esc(prettyDate(DB.lastLog.at.slice(0,10)))})</summary>
         ${DB.lastLog.rows.map(r=>`<div class="tiny" style="padding:4px 0;border-top:1px solid var(--soft)"><b>${esc(r.name)}</b><br><span class="${/feil|avvist|ikke|fikk|fant ikke|brukt opp/i.test(r.msg)?'down':'muted'}">${esc(r.msg)}</span></div>`).join('')}</details>`:''}
