@@ -152,6 +152,10 @@ input.bad,select.bad{border-color:var(--down)!important}
 .nlegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#8E9CC4;margin-top:6px}
 .nlegend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:6px;vertical-align:3px;box-shadow:0 0 6px currentColor}
 .nchips{display:flex;gap:6px;margin-top:10px}
+.schips{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}
+.schips button{flex:1;min-width:70px;padding:7px 4px;border-radius:9px;border:1px solid var(--soft);background:transparent;color:var(--muted);font-size:12.5px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:3px}
+.schips button[aria-pressed="true"]{color:var(--ink);border-color:var(--muted);background:var(--soft)}
+.schips .ar{font-size:10px;opacity:.9}
 .nchips button{flex:1;padding:6px 0;border-radius:8px;border:1px solid #233056;color:#8E9CC4;font-size:12.5px;font-weight:700}
 .nchips button[aria-pressed="true"]{color:#22F5D0;border-color:#22F5D0;box-shadow:0 0 10px rgba(34,245,208,.35),inset 0 0 8px rgba(34,245,208,.15)}
 .nmarks{display:flex;gap:6px;margin-top:8px}
@@ -2042,13 +2046,13 @@ function viewFollow(C){
       <p>Legg til aksjer du vil følge med på, også slike du ikke eier, og sett grenser for varsling.</p>
       <button class="btn solid" data-act="watchadd">Følg en aksje</button></div>`;
   const held=C.pos;
-  const sortK=DB.settings.followSort||'alerts';
-  const SORTS=[['alerts','Grenser først'],['name','Navn'],['change','Endring'],['price','Kurs']];
-  const chips=`<div class="nchips" style="margin:0 0 12px">${SORTS.map(([k,l])=>`<button data-act="followsort" data-k="${k}" aria-pressed="${k===sortK}">${l}</button>`).join('')}</div>`;
+  const sortK=DB.settings.followSort||'alerts', dir=DB.settings.followDir||1;
+  const SORTS=[['alerts','Grenser'],['name','Navn'],['change','Endring'],['price','Kurs']];
+  const chips=`<div class="schips">${SORTS.map(([k,l])=>`<button data-act="followsort" data-k="${k}" aria-pressed="${k===sortK}">${l}${k===sortK?` <span class="ar">${dir===1?'▲':'▼'}</span>`:''}</button>`).join('')}</div>`;
   const byName=(a,b)=>a.name.localeCompare(b.name,'nb');
-  const cmp={ name:byName,
-    change:(a,b)=>{ const da=watchDayPct(a), db=watchDayPct(b); if(da==null&&db==null) return byName(a,b); if(da==null) return 1; if(db==null) return -1; return db-da; },
-    price:(a,b)=>{ const pa=num(a.price), pb=num(b.price); if(!(pa>0)&&!(pb>0)) return byName(a,b); if(!(pa>0)) return 1; if(!(pb>0)) return -1; return pb-pa; } };
+  const cmp={ name:(a,b)=>dir*byName(a,b),
+    change:(a,b)=>{ const da=watchDayPct(a), db=watchDayPct(b); if(da==null&&db==null) return byName(a,b); if(da==null) return 1; if(db==null) return -1; return dir*(da-db)||byName(a,b); },
+    price:(a,b)=>{ const pa=num(a.price), pb=num(b.price); if(!(pa>0)&&!(pb>0)) return byName(a,b); if(!(pa>0)) return 1; if(!(pb>0)) return -1; return dir*(pa-pb)||byName(a,b); } };
   const rowFor=s=>{ const d=watchDayPct(s), hit=(s.alerts||[]).filter(r=>r.hit&&!r.off), px=num(s.price);
     return `<button class="item watchrow${hit.length?' hitrow':''}" data-act="watchedit" data-id="${esc(s.id)}">
       <div class="b"><b>${esc(s.name)}${hit.length?' <span class="tag new">⚠ utløst</span>':''}${held[s.id]?' <span class="tag" style="background:var(--acc-soft,#e6f4ef);color:var(--acc)">eier</span>':''}</b>
@@ -2057,7 +2061,7 @@ function viewFollow(C){
       <span class="chev">›</span></button>`; };
   let body;
   if(sortK==='alerts'){
-    const withA=DB.secs.filter(s=>s.alerts&&s.alerts.length).slice().sort(byName), rest=DB.secs.filter(s=>!(s.alerts&&s.alerts.length)).slice().sort(byName);
+    const gs=(a,b)=>dir*byName(a,b); const withA=DB.secs.filter(s=>s.alerts&&s.alerts.length).slice().sort(gs), rest=DB.secs.filter(s=>!(s.alerts&&s.alerts.length)).slice().sort(gs);
     const sec1=withA.length?`<div class="sub" style="margin:2px 0 6px">Med grenser</div>${withA.map(rowFor).join('')}`:'';
     const sec2=rest.length?`<div class="sub" style="margin:${withA.length?'14px':'2px'} 0 6px">${withA.length?'Uten grenser':'Dine aksjer og fond'}</div>${rest.map(rowFor).join('')}`:'';
     body=sec1+sec2;
@@ -2136,7 +2140,10 @@ document.addEventListener('click',e=>{
   else if(a==='wnotify') ensureNotify();
   else if(a==='gowatch'){ view='watch'; watchTab='list'; render(); scrollTo(0,0); }
   else if(a==='followtab'){ watchTab=b.dataset.k; render(); scrollTo(0,0); }
-  else if(a==='followsort'){ DB.settings.followSort=b.dataset.k; save(); render(); }
+  else if(a==='followsort'){ const k=b.dataset.k, def={name:1,change:-1,price:-1,alerts:1};
+    if(DB.settings.followSort===k) DB.settings.followDir=-((DB.settings.followDir)||1);
+    else { DB.settings.followSort=k; DB.settings.followDir=def[k]||1; }
+    save(); render(); }
   else if(a==='dismissall'){ pendingDivs(compute()).forEach(p=>{ (DB.dismissed[p.secId]=DB.dismissed[p.secId]||[]).push(p.exDate+'|'+p.accId); }); save(); render(); toast('Ignorert'); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
