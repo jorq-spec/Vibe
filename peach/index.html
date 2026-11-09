@@ -823,10 +823,31 @@ function macroBar(label,val,goal,cls){
 }
 function entryRow(e){
   return `<div class="fentry">
-    <div class="body"><b>${esc(e.name)}</b><span>${e.brand?esc(e.brand)+' · ':''}${e.unit==='serving'?fmtK(e.qty)+' serving'+(e.qty===1?'':'s'):fmtK(e.qty)+' g'}${e.time?' · '+esc(e.time):''}</span></div>
+    <div class="body" data-act="editentry" data-id="${e.id}" style="cursor:pointer"><b>${esc(e.name)}</b><span>${e.brand?esc(e.brand)+' · ':''}${e.unit==='serving'?fmtK(e.qty)+' serving'+(e.qty===1?'':'s'):fmtK(e.qty)+' g'}${e.time?' · '+esc(e.time):''}</span></div>
     <div class="fmacros"><b>${fmtK(e.kcal)} kcal</b><span>${fmtK(e.protein)}p ${fmtK(e.carbs)}c ${fmtK(e.fat)}f${e.fiber?' '+fmtK(e.fiber)+'fi':''}</span></div>
     <button class="del" data-act="delentry" data-id="${e.id}">✕</button>
   </div>`;
+}
+/* Tap a logged food to change how much you had. Foods logged by weight rescale from their
+   per-100 g values; everything else (servings, recipes, older entries) scales in proportion. */
+function editEntrySheet(id){
+  const day=foodDate||todayKey(), e=(DB.food.entries[day]||[]).find(x=>x.id===id); if(!e) return;
+  const grams=e.unit!=='serving';
+  const calc=q=>{ if(e.per100&&grams) return scaleNut(e.per100,q); const f=e.qty>0?q/e.qty:0;
+    return {kcal:Math.round((e.kcal||0)*f), protein:round1((e.protein||0)*f), carbs:round1((e.carbs||0)*f), fat:round1((e.fat||0)*f), fiber:round1((e.fiber||0)*f)}; };
+  const c=el(`<div><h3>${esc(e.name)}</h3><p class="sh-sub">${e.brand?esc(e.brand)+' · ':''}${esc(e.meal||'')}${e.time?' · '+esc(e.time):''}</p>
+    <div class="field"><label>${grams?'Amount (g)':'Servings'}</label><input type="number" id="eeqty" value="${e.qty}" step="${grams?5:0.5}" min="0" inputmode="decimal"></div>
+    <p class="sh-sub" id="eeprev" style="margin:-4px 0 14px"></p>
+    <button class="btn primary full" id="eesave">Save</button>
+    <button class="btn full" id="eedel" style="margin-top:8px">Remove</button></div>`);
+  const sh=openSheet(c), inp=sh.querySelector('#eeqty');
+  const prev=()=>{ const q=parseFloat(inp.value)||0, n=calc(q); sh.querySelector('#eeprev').textContent=`${fmtK(n.kcal)} kcal · ${fmtK(n.protein)}p ${fmtK(n.carbs)}c ${fmtK(n.fat)}f`; };
+  inp.addEventListener('input',prev); prev();
+  sh.querySelector('#eesave').onclick=()=>{ const q=parseFloat(inp.value)||0; if(q<=0){ toast(grams?'Enter grams':'Enter servings'); return; }
+    if(!(e.per100&&grams)&&!(e.qty>0)){ toast('Can\'t rescale this one'); return; }
+    Object.assign(e,calc(q),{qty:q}); save(); closeSheet(); render(); toast('Updated'); };
+  sh.querySelector('#eedel').onclick=()=>{ DB.food.entries[day]=(DB.food.entries[day]||[]).filter(x=>x.id!==id); save(); closeSheet(); render(); toast('Removed'); };
+  setTimeout(()=>inp.select(),100);
 }
 function mealGroupHtml(day, g){
   const tot=g.items.reduce((t,e)=>t+(e.kcal||0),0);
@@ -2531,6 +2552,7 @@ function bind(){
       fResults=[{id:'freq:'+r.key, name:r.name, brand:r.brand, source:r.source, per100:r.per100}];
       logResultSheet('freq:'+r.key, r.lastQty); return;
     }
+    if(a==='editentry') return editEntrySheet(t.dataset.id);
     if(a==='delentry'){
       const day=foodDate||todayKey();
       DB.food.entries[day]=(DB.food.entries[day]||[]).filter(e=>e.id!==t.dataset.id);
