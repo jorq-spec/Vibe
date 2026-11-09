@@ -233,14 +233,24 @@ const CURS=['NOK','USD','EUR','SEK','DKK','GBP'];
 const uid=()=>Date.now().toString(36).slice(-4)+Math.random().toString(36).slice(2,7);
 let DB;
 try{ DB=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ DB=null; }
-function blank(){ return {v:1,accounts:[{id:uid(),name:'Aksjekonto',type:'ord'}],secs:[],tx:[],fx:{},divCache:{},dismissed:{},watch:[],
+function blank(){ return {v:1,accounts:[{id:uid(),name:'Aksjekonto',type:'ord'}],secs:[],tx:[],fx:{},divCache:{},dismissed:{},
   settings:{theme:'light',provider:'',apiKey:'',gemKey:'',model:''}}; }
 if(DEMO&&(!DB||!DB.demo)){ DB=demoDB(); try{ const real=JSON.parse(localStorage.getItem('portefolje_v1')||'{}'); if(real.settings){ DB.settings.theme=real.settings.theme||'light'; DB.settings.gemKey=real.settings.gemKey||''; } }catch(e){} }
 if(!DB||!Array.isArray(DB.tx)) DB=blank();
 function normalize(){ const b=blank();
   for(const k of Object.keys(b)) if(DB[k]==null) DB[k]=b[k];
   DB.settings=Object.assign(b.settings,DB.settings||{});
-  if(!DB.accounts.length) DB.accounts=b.accounts; }
+  if(!DB.accounts.length) DB.accounts=b.accounts;
+  /* older versions kept a separate watchlist – fold its limits onto the securities */
+  if(Array.isArray(DB.watch)&&DB.watch.length){
+    for(const w of DB.watch){ let s2=w.secId&&sec(w.secId);
+      if(!s2&&w.ticker) s2=DB.secs.find(x=>x.ticker&&x.ticker.toUpperCase()===String(w.ticker).toUpperCase());
+      if(!s2&&w.name) s2=DB.secs.find(x=>x.name===w.name);
+      const rules=(w.rules||[]).map(r=>({id:uid(),type:r.type,value:r.value,off:!!r.off}));
+      if(s2) s2.alerts=(s2.alerts||[]).concat(rules);
+      else DB.secs.push({id:uid(),name:w.name,ticker:w.ticker||'',cur:w.cur||'NOK',kind:w.kind||'aksje',sector:'',price:w.price||'',priceAt:w.priceAt||'',hist:w.hist||{},ySym:w.ySym||'',alerts:rules}); }
+  }
+  delete DB.watch; }
 normalize();
 let saveT; function save(){ clearTimeout(saveT); saveT=setTimeout(()=>{ try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){ toast('Fikk ikke lagret: lagringen er full'); } },150); }
 addEventListener('pagehide',()=>{ try{ localStorage.setItem(KEY,JSON.stringify(DB)); }catch(e){} });
@@ -289,6 +299,7 @@ const ICON={
   moon:'<svg viewBox="0 0 24 24"><path d="M20.5 13.2A8.3 8.3 0 1 1 10.8 3.5a6.6 6.6 0 0 0 9.7 9.7z"/></svg>',
   refresh:'<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   cal:'<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  bell:'<svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
   calcoin:'<svg viewBox="0 0 24 24"><path d="M20 11V7.5A2.5 2.5 0 0 0 17.5 5h-11A2.5 2.5 0 0 0 4 7.5v11A2.5 2.5 0 0 0 6.5 21H11"/><path d="M4 10h16M8 3v4M16 3v4"/><circle cx="17" cy="17" r="4"/><path d="M17 15.2v3.6"/></svg>',
   back:'<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
 };
@@ -585,10 +596,9 @@ async function refreshAll(manual=true){
     /* a worker flagged as old may have been updated since — check again (cheap, no quota) */
     if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
-    await refreshWatch();
     const held=heldAll();
     /* what you own now first, so the free daily quota goes where it matters */
-    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
+    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)||(s.alerts&&s.alerts.length))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
@@ -646,21 +656,15 @@ async function liveTick(force){
   try{
     const held=heldAll(), bucket=Math.floor(Date.now()/3e5); let n=0, fail=[];
     for(const s of DB.secs){
-      if(!held[s.id]) continue; const sym=yahooSymbol(s); if(!sym) continue;
+      if(!held[s.id]&&!(s.alerts&&s.alerts.length)) continue; const sym=yahooSymbol(s); if(!sym) continue;
       if(eodFirst()&&eodSymbol(s)) continue;
       try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
-        if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo';
+        if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; if(Number(m.chartPreviousClose)>0) s.prevClose=Number(m.chartPreviousClose);
           if(m.regularMarketTime){ const iso=new Date(m.regularMarketTime*1000).toISOString(); s.priceAt=iso; s.hist=s.hist||{}; s.hist[new Date((m.regularMarketTime+(Number(m.gmtoffset)||0))*1000).toISOString().slice(0,10)]=Math.round(p*1e4)/1e4; }
           n++; } else fail.push(s.name);
       }catch(e){ fail.push(s.name); }
     }
-    for(const w of (DB.watch||[])){ if(isFund(w)) continue; const sym=yahooFor(w); if(!sym) continue;
-      try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
-        const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
-        if(p>0){ w.price=p; w.priceVia='Yahoo'; w.priceSrc='Yahoo'; w.priceTs=Date.now(); if(Number(m.chartPreviousClose)>0) w.prevClose=Number(m.chartPreviousClose);
-          if(m.regularMarketTime){ w.priceAt=new Date(m.regularMarketTime*1000).toISOString(); } n++; }
-      }catch(e){} }
     DB.liveLog={at:new Date().toISOString(), ok:n, fail};
     if(n){ save(); render(); }
     checkWatchAlerts();
@@ -673,39 +677,11 @@ setInterval(()=>liveTick(),60e3);
    Watchlist: follow stocks (owned or not) and get an alert when a limit is hit.
    Prices come from Yahoo through the same proxy; funds use the ordinary quote path.
    ============================================================ */
-async function fetchWatch(w){
-  if(!canFetch()) return false;
-  const sym=yahooFor(w);
-  if(yahooReady() && !isFund(w) && sym){
-    try{
-      const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${Math.floor(Date.now()/3e5)}`);
-      const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
-      if(p>0){ w.price=p; if(!w.cur&&m.currency) w.cur=m.currency; w.priceVia='Yahoo'; w.priceSrc='Yahoo'; w.priceTs=Date.now(); delete w.watchErr;
-        if(Number(m.chartPreviousClose)>0) w.prevClose=Number(m.chartPreviousClose);
-        if(m.regularMarketTime){ const t=m.regularMarketTime; w.priceAt=new Date(t*1000).toISOString();
-          w.hist=w.hist||{}; w.hist[new Date((t+(Number(m.gmtoffset)||0))*1000).toISOString().slice(0,10)]=Math.round(p*1e4)/1e4; }
-        return true; }
-    }catch(e){ w.watchErr=e.message; }
-  }
-  try{
-    if(isFund(w)&&!fundYahoo(w)) await resolveFundYahoo(w);
-    const q=await getQuote(w);
-    if(q&&q.price>0){ w.price=q.price; w.priceAt=q.time||(q.date?q.date+'T12:00:00':new Date().toISOString()); w.priceVia=q.src; w.priceSrc=q.src; w.priceTs=Date.now(); delete w.watchErr;
-      const ks=Object.keys(w.hist||{}).sort().filter(d=>d<today()); if(ks.length) w.prevClose=w.hist[ks[ks.length-1]];
-      return true; }
-  }catch(e){ w.watchErr=e.message; }
-  return false;
-}
-async function refreshWatch(){
-  if(!(DB.watch&&DB.watch.length)||!canFetch()) return;
-  for(const w of DB.watch){ await fetchWatch(w); await sleep(PROVIDER_GAP_MS); }
-  save(); checkWatchAlerts();
-}
 function watchDayPct(w){
-  if(!(w&&w.price>0)) return null;
-  let pc=w.prevClose>0?w.prevClose:0;
+  const px=w?num(w.price):NaN; if(!(px>0)) return null;
+  let pc=num(w.prevClose)>0?num(w.prevClose):0;
   if(!pc){ const ks=Object.keys(w.hist||{}).sort().filter(d=>d<today()); if(ks.length) pc=w.hist[ks[ks.length-1]]; }
-  return pc>0?(w.price/pc-1)*100:null;
+  return pc>0?(px/pc-1)*100:null;
 }
 function ruleText(r){
   return r.type==='above'?`over ${nf(r.value,r.value<10?2:0)}`
@@ -714,7 +690,7 @@ function ruleText(r){
        :`ned ${nf(r.value,r.value%1?1:0)} %`;
 }
 function ruleTriggered(w,r){
-  const p=w.price; if(!(p>0)) return false;
+  const p=num(w.price); if(!(p>0)) return false;
   if(r.type==='above') return p>=r.value;
   if(r.type==='below') return p<=r.value;
   const d=watchDayPct(w); if(d==null) return false;
@@ -722,17 +698,19 @@ function ruleTriggered(w,r){
   if(r.type==='pctdn') return d<=-r.value;
   return false;
 }
+function secAlerts(){ return DB.secs.filter(s=>s.alerts&&s.alerts.length); }
+function watchAlertCount(){ return secAlerts().reduce((n,s)=>n+s.alerts.filter(r=>r.hit&&!r.off).length,0); }
 function checkWatchAlerts(){
-  if(!(DB.watch&&DB.watch.length)) return;
+  const list=secAlerts(); if(!list.length) return;
   const fresh=[];
-  for(const w of DB.watch){ for(const r of (w.rules||[])){
+  for(const w of list){ for(const r of w.alerts){
     if(r.off){ if(r.hit) r.hit=null; continue; }
     const on=ruleTriggered(w,r);
     if(on&&!r.hit){ r.hit=new Date().toISOString(); fresh.push({w,r}); }
     else if(!on&&r.hit){ r.hit=null; }   /* re-arm when the price moves back */
   }}
   if(fresh.length){ save();
-    const lines=fresh.map(({w,r})=>`${w.name}: ${ruleText(r)} (${nf(w.price,w.price<10?2:2)} ${w.cur||''})`.trim());
+    const lines=fresh.map(({w,r})=>`${w.name}: ${ruleText(r)} (${nf(num(w.price),num(w.price)<10?2:2)} ${w.cur||''})`.trim());
     notify(fresh.length===1?'Kursvarsel':`${fresh.length} kursvarsler`, lines.join('\n'));
     if(document.visibilityState==='visible') toast(lines[0]+(fresh.length>1?`  (+${fresh.length-1})`:''));
     if(typeof render==='function') render();
@@ -1532,7 +1510,7 @@ function scopeBar(){
   return `<div class="seg" style="margin-bottom:12px">${[['all','Alt'],['aksje','Aksjer'],['fond','Fond']].map(([k,l])=>`<button data-act="scope" data-k="${k}" aria-pressed="${scope()===k}">${l}</button>`).join('')}</div>`;
 }
 function render(){
-  const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['cal','Kalender',ICON.cal],['tx','Handler',ICON.list],['div','Utbytte',ICON.coin],['divcal','Utb.kal.',ICON.calcoin]];
+  const tabs=[['home','Oversikt',ICON.home],['hold','Beholdning',ICON.pie],['cal','Kalender',ICON.cal],['tx','Handler',ICON.list],['div','Utbytte',ICON.coin],['watch','Følg',ICON.bell]];
   $('#tabs').innerHTML=tabs.map(([k,l,i])=>`<button aria-selected="${view===k}" data-tab="${k}">${i}<span>${l}</span></button>`).join('');
   const C=compute();
   const T=$('#top'), A=$('#app');
@@ -1541,12 +1519,14 @@ function render(){
   else if(view==='hold'){ T.innerHTML=topbar('Beholdning', `${Object.keys(C.pos).length} ${Object.keys(C.pos).length===1?'post':'poster'}${SC}`); A.innerHTML=scopeBar()+viewHold(C); }
   else if(view==='cal'){ T.innerHTML=topbar('Kalender','Endring per dag'+SC); A.innerHTML=scopeBar()+viewCal(); }
   else if(view==='tx'){ T.innerHTML=topbar('Transaksjoner', `${DB.tx.filter(t=>inScope(t.secId)).length} totalt${SC}`); A.innerHTML=scopeBar()+viewTx(C); }
-  else if(view==='divcal'){ T.innerHTML=topbar('Utbyttekalender', (DB.settings.dcEst?'Bekreftet og anslått':'Bekreftede utbytter')+SC); A.innerHTML=scopeBar()+viewDivCal(C); }
-  else if(view==='watch'){ T.innerHTML=topbar('Vaktliste', watchSub(), 'gohome'); A.innerHTML=viewWatch(); }
+  else if(view==='watch'){
+    if(watchTab==='divcal'){ T.innerHTML=topbar('Utbyttekalender', (DB.settings.dcEst?'Bekreftet og anslått':'Bekreftede utbytter')+SC); A.innerHTML=followToggle()+scopeBar()+viewDivCal(C); }
+    else { T.innerHTML=topbar('Følg og varsle', watchSub()); A.innerHTML=followToggle()+viewFollow(C); } }
   else { T.innerHTML=topbar('Utbytte', 'Mottatt og ventet'+SC); A.innerHTML=scopeBar()+viewDiv(C); }
   const fab=$('#fab'); fab.hidden=false;
-  if(view==='watch'){ fab.onclick=addWatchSheet; $('#fabLbl').textContent='Følg ny'; }
-  else { fab.onclick=()=>txSheet(null,{type:(view==='div'||view==='divcal')?'div':'buy'}); $('#fabLbl').textContent=(view==='div'||view==='divcal')?'Nytt utbytte':'Ny transaksjon'; }
+  if(view==='watch'&&watchTab!=='divcal'){ fab.onclick=addFollowSheet; $('#fabLbl').textContent='Følg ny aksje'; }
+  else if(view==='watch'){ fab.onclick=()=>txSheet(null,{type:'div'}); $('#fabLbl').textContent='Nytt utbytte'; }
+  else { fab.onclick=()=>txSheet(null,{type:view==='div'?'div':'buy'}); $('#fabLbl').textContent=view==='div'?'Nytt utbytte':'Ny transaksjon'; }
 }
 function lastUpdateText(){
   if(DEMO) return 'Oppdiktede eksempeltall';
@@ -1989,7 +1969,7 @@ function menuSheet(){
     <button class="btn full" style="margin-bottom:8px" data-m="acc">Kontoer (${DB.accounts.length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="src">Datakilder og nøkler</button>
     <button class="btn full" style="margin-bottom:8px" data-m="secs">Aksjer og fond (${DB.secs.length})</button>
-    <button class="btn full" style="margin-bottom:8px" data-m="watch">Vaktliste – følg kurser (${(DB.watch||[]).length})</button>
+    <button class="btn full" style="margin-bottom:8px" data-m="watch">Vaktliste og varsler (${DB.secs.filter(s=>s.alerts&&s.alerts.length).length})</button>
     <button class="btn full" style="margin-bottom:8px" data-m="import">Importer fra fil (KLP m.fl.)</button>
     <button class="btn full" style="margin-bottom:8px" data-m="backup">Last ned backup</button>
     <label class="btn full" style="margin-bottom:8px">Gjenopprett fra fil<input type="file" id="imp" accept=".json,application/json" hidden></label>
@@ -1999,7 +1979,7 @@ function menuSheet(){
   const m=k=>sh.querySelector(`[data-m="${k}"]`);
   m('demo').onclick=()=>{ if(DEMO) setDemo(false); else if(confirmBox('Åpne demomodus? Appen viser da en oppdiktet portefølje. Dine egne tall blir liggende urørt, og du kommer tilbake til dem via Meny.')) setDemo(true); };
   m('acc').onclick=accountsSheet; m('src').onclick=sourcesSheet; m('import').onclick=importSheet;
-  m('watch').onclick=()=>{ closeSheet(); view='watch'; render(); scrollTo(0,0); };
+  m('watch').onclick=()=>{ closeSheet(); view='watch'; watchTab='list'; render(); scrollTo(0,0); };
   m('secs').onclick=()=>{ const s2=openSheet(`<h3>Aksjer og fond</h3><p class="sub">Trykk for å endre navn, ticker/ISIN, valuta eller sektor.</p>
       ${DB.secs.map(s=>`<button class="item" data-id="${s.id}"><div class="b"><b>${esc(s.name)}</b><span>${esc(s.ticker||'uten ticker')} · ${s.cur}${s.divCur&&s.divCur!==s.cur?' · utbytte i '+s.divCur:''}${s.sector?' · '+esc(s.sector):''}</span></div></button>`).join('')}
       <button class="btn ghost full" id="snew">+ Ny aksje eller fond</button>`);
@@ -2046,68 +2026,71 @@ function addExamples(){
    ============================================================ */
 function applyTheme(){ const d=DB.settings.theme==='dark'; document.documentElement.classList.toggle('dark',d);
   document.querySelector('meta[name=theme-color]').content=d?'#0F1614':'#F3F5F2'; }
-function watchSub(){ const n=(DB.watch||[]).length; return n?`${n} ${n===1?'aksje følges':'aksjer følges'}`:'Følg kurser og sett grenser'; }
-function watchAlertCount(){ return (DB.watch||[]).reduce((s,w)=>s+(w.rules||[]).filter(r=>r.hit&&!r.off).length,0); }
-function watchBanner(){ const n=watchAlertCount(); return n?`<button class="card" style="border-color:var(--warn);text-align:left;width:100%;display:block" data-act="gowatch"><b style="color:var(--warn)">\u26A0 ${n} ${n===1?'kursvarsel':'kursvarsler'} utl\u00F8st</b><span class="tiny muted" style="display:block;margin-top:2px">Trykk for \u00E5 se vaktlisten</span></button>`:''; }
+let watchTab='list';
+function watchSub(){ const n=secAlerts().length, a=watchAlertCount(); return a?`${a} ${a===1?'varsel':'varsler'} utløst`:n?`${n} ${n===1?'aksje overvåkes':'aksjer overvåkes'}`:'Sett grenser og få varsel'; }
+function watchBanner(){ const n=watchAlertCount(); return n?`<button class="card" style="border-color:var(--warn);text-align:left;width:100%;display:block" data-act="gowatch"><b style="color:var(--warn)">⚠ ${n} ${n===1?'kursvarsel':'kursvarsler'} utløst</b><span class="tiny muted" style="display:block;margin-top:2px">Trykk for å se listen</span></button>`:''; }
+function followToggle(){ return `<div class="seg" style="margin-bottom:12px"><button data-act="followtab" data-k="list" aria-pressed="${watchTab!=='divcal'}">Vaktliste</button><button data-act="followtab" data-k="divcal" aria-pressed="${watchTab==='divcal'}">Utbyttekalender</button></div>`; }
 const RTYPES=[['above','Kurs over'],['below','Kurs under'],['pctup','Opp i dag (%)'],['pctdn','Ned i dag (%)']];
-function viewWatch(){
+function alertSummary(s){ const al=s.alerts||[]; if(!al.length) return '<span class="tiny muted">ingen grenser – trykk for å sette</span>';
+  return `<span class="tiny muted">${al.map(r=>`${r.off?'<s style="opacity:.6">':''}${esc(ruleText(r))}${r.hit&&!r.off?' ✓':''}${r.off?'</s>':''}`).join(' · ')}</span>`; }
+function viewFollow(C){
   const supported='Notification' in window, perm=supported?Notification.permission:'off';
   const banner = perm==='granted' ? '' : `<div class="card" style="border-color:var(--acc)"><b>Varsler på telefonen</b>
       <p class="tiny muted" style="margin:4px 0 8px">${perm==='denied'?'Varsler er blokkert for denne siden. Slå dem på igjen under nettleserens innstillinger for siden.':supported?'Få et varsel når en grense nås – også når appen ligger i bakgrunnen. Når appen er helt lukket, kan den ikke varsle, men grensene sjekkes neste gang du åpner den.':'Denne nettleseren støtter ikke varsler. Grensene vises i appen uansett.'}</p>
       ${perm==='default'?'<button class="btn sm" data-act="wnotify">Slå på varsler</button>':''}</div>`;
-  if(!(DB.watch||[]).length) return banner+`<div class="empty"><h3>Ingen aksjer følges ennå</h3>
-      <p>Legg til aksjer du vil følge med på, også slike du ikke eier. Sett grenser for kurs eller dagsendring, så sier appen fra når de nås.</p>
+  if(!DB.secs.length) return banner+`<div class="empty"><h3>Ingen aksjer lagt til ennå</h3>
+      <p>Legg til aksjer du vil følge med på, også slike du ikke eier, og sett grenser for varsling.</p>
       <button class="btn solid" data-act="watchadd">Følg en aksje</button></div>`;
-  const rows=DB.watch.map(w=>{ const d=watchDayPct(w), rules=(w.rules||[]), hit=rules.filter(r=>r.hit&&!r.off);
-    return `<button class="item watchrow${hit.length?' hitrow':''}" data-act="watchedit" data-id="${esc(w.id)}">
-      <div class="b"><b>${esc(w.name)}${hit.length?' <span class="tag new">⚠ utløst</span>':''}</b>
-        <span>${w.price>0?`${nf(w.price,w.price<10?2:2)} ${esc(w.cur||'')}`:(w.watchErr?'fant ingen kurs':'henter kurs…')}${d!=null?` · <span class="${d>=0?'up':'down'}">${pct(d)}</span> i dag`:''}${w.ticker?` · ${esc(w.ticker)}`:''}</span>
-        <span class="tiny muted">${rules.length?rules.map(r=>`${r.off?'<s style="opacity:.6">':''}${esc(ruleText(r))}${r.hit&&!r.off?' ✓':''}${r.off?'</s>':''}`).join(' · '):'ingen grenser satt – trykk for å legge til'}</span></div>
-      <span class="chev">›</span></button>`; }).join('');
-  return banner+rows+`<button class="btn ghost full" style="margin-top:10px" data-act="watchadd">+ Følg en aksje til</button>`;
+  const withA=DB.secs.filter(s=>s.alerts&&s.alerts.length), rest=DB.secs.filter(s=>!(s.alerts&&s.alerts.length));
+  const held=C.pos;
+  const rowFor=s=>{ const d=watchDayPct(s), hit=(s.alerts||[]).filter(r=>r.hit&&!r.off), px=num(s.price);
+    return `<button class="item watchrow${hit.length?' hitrow':''}" data-act="watchedit" data-id="${esc(s.id)}">
+      <div class="b"><b>${esc(s.name)}${hit.length?' <span class="tag new">⚠ utløst</span>':''}${held[s.id]?' <span class="tag" style="background:var(--acc-soft,#e6f4ef);color:var(--acc)">eier</span>':''}</b>
+        <span>${px>0?`${nf(px,px<10?2:2)} ${esc(s.cur||'')}`:(s.ticker?'henter kurs…':'mangler ticker')}${d!=null?` · <span class="${d>=0?'up':'down'}">${pct(d)}</span> i dag`:''}${s.ticker?` · ${esc(s.ticker)}`:''}</span>
+        ${alertSummary(s)}</div>
+      <span class="chev">›</span></button>`; };
+  const sec1=withA.length?`<div class="sub" style="margin:2px 0 6px">Med grenser</div>${withA.map(rowFor).join('')}`:'';
+  const sec2=rest.length?`<div class="sub" style="margin:${withA.length?'14px':'2px'} 0 6px">${withA.length?'Uten grenser':'Dine aksjer og fond'}</div>${rest.map(rowFor).join('')}`:'';
+  return banner+sec1+sec2+`<button class="btn ghost full" style="margin-top:12px" data-act="watchadd">+ Følg en ny aksje</button>`;
 }
-function addWatchItem(o){ const id=uid(); (DB.watch=DB.watch||[]).push({id,name:o.name,ticker:o.ticker||'',cur:o.cur||'NOK',kind:o.kind||'',secId:o.secId||'',ySym:o.ySym||'',rules:[]}); save(); render();
-  if(typeof canFetch==='function'&&canFetch()){ const w=DB.watch.find(x=>x.id===id); fetchWatch(w).then(ok=>{ if(ok){ save(); render(); } }); } return id; }
-function addWatchSheet(){
-  const taken=id=>(DB.watch||[]).some(w=>w.secId===id);
-  const owned=DB.secs.filter(s=>!taken(s.id));
-  const sh=openSheet(`<h3>Følg en aksje</h3><p class="sub">Velg en du allerede har lagt inn, eller skriv inn en ny.</p>
-    ${owned.length?`<div class="sub" style="margin:0 0 6px">Dine aksjer og fond</div>${owned.map(x=>`<button class="item" data-pick="${esc(x.id)}"><div class="b"><b>${esc(x.name)}</b><span>${esc(x.ticker||'uten ticker')} · ${esc(x.cur)}</span></div><span class="chev">+</span></button>`).join('')}<div class="sub" style="margin:12px 0 6px">Eller en ny</div>`:''}
+function addFollowSec(o){ const s={id:uid(),name:o.name,ticker:o.ticker||'',cur:o.cur||'NOK',kind:o.kind||'aksje',sector:'',price:'',alerts:[]}; DB.secs.push(s); save(); render();
+  if(typeof canFetch==='function'&&canFetch()&&s.ticker){ refreshSec(s).then(()=>{ save(); render(); }); } return s.id; }
+function addFollowSheet(){
+  const sh=openSheet(`<h3>Følg en ny aksje</h3><p class="sub">Aksjer du allerede har lagt inn ligger i listen. Her legger du til en ny – også en du ikke eier.</p>
     <div class="two"><div class="f"><label for="wname">Navn</label><input id="wname" placeholder="f.eks. Equinor"></div>
       <div class="f"><label for="wtick">Ticker</label><input id="wtick" placeholder="EQNR" autocapitalize="characters"></div></div>
     <div class="f"><label for="wcur">Valuta</label><select id="wcur"><option>NOK</option><option>USD</option><option>SEK</option><option>DKK</option><option>EUR</option><option>GBP</option></select></div>
     <p class="hint">Ticker som på Oslo Børs (EQNR), eller med børskode for utenlandske (AAPL, VOLV-B.ST). Brukes til å hente kursen fra Yahoo.</p>
-    <button class="btn solid full" id="wadd">Legg til</button>`);
-  sh.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ const x=sec(b.dataset.pick); const id=addWatchItem({name:x.name,ticker:x.ticker,cur:x.cur,kind:x.kind,secId:x.id,ySym:x.ySym}); closeSheet(); watchSheet(id); });
+    <button class="btn solid full" id="wadd">Legg til og sett grenser</button>`);
   sh.querySelector('#wadd').onclick=()=>{ const name=(sh.querySelector('#wname').value||'').trim(); const ticker=(sh.querySelector('#wtick').value||'').trim().toUpperCase(); const cur=sh.querySelector('#wcur').value;
-    if(!name){ toast('Skriv inn et navn'); return; } const id=addWatchItem({name,ticker,cur}); closeSheet(); watchSheet(id); };
+    if(!name){ toast('Skriv inn et navn'); return; }
+    const dupe=DB.secs.find(x=>x.ticker&&ticker&&x.ticker.toUpperCase()===ticker); if(dupe){ closeSheet(); alertSheet(dupe.id); toast('Du følger den allerede'); return; }
+    const id=addFollowSec({name,ticker,cur}); closeSheet(); alertSheet(id); };
 }
-function watchSheet(id){
-  const w=(DB.watch||[]).find(x=>x.id===id); if(!w) return;
-  const rulesHtml=()=> (w.rules&&w.rules.length) ? w.rules.map((r,i)=>`<div class="wrule" data-i="${i}">
+function alertSheet(id){
+  const s=sec(id); if(!s) return; if(!s.alerts) s.alerts=[];
+  const owned=compute().pos[id], hasTx=DB.tx.some(t=>t.secId===id);
+  const rulesHtml=()=> (s.alerts.length) ? s.alerts.map((r,i)=>`<div class="wrule" data-i="${i}">
       <select class="wrtype">${RTYPES.map(([k,l])=>`<option value="${k}"${k===r.type?' selected':''}>${l}</option>`).join('')}</select>
       <input class="wrval" type="number" inputmode="decimal" value="${esc(r.value)}" step="${r.type==='pctup'||r.type==='pctdn'?1:(r.value<10?0.5:1)}">
-      <button type="button" class="wrdel" aria-label="Fjern grense">✕</button></div>`).join('') : '<p class="tiny muted" style="margin:0 0 8px">Ingen grenser ennå. Legg til en under.</p>';
-  const sh=openSheet(`<h3>${esc(w.name)}</h3>
-    <p class="sub" id="wprice">${w.price>0?`${nf(w.price,2)} ${esc(w.cur||'')}${watchDayPct(w)!=null?` · ${pct(watchDayPct(w))} i dag`:''}`:'Henter kurs…'}</p>
-    <div class="two"><div class="f"><label for="wsname">Navn</label><input id="wsname" value="${esc(w.name)}"></div>
-      <div class="f"><label for="wstick">Ticker</label><input id="wstick" value="${esc(w.ticker||'')}" autocapitalize="characters"></div></div>
+      <button type="button" class="wrdel" aria-label="Fjern grense">✕</button></div>`).join('') : '<p class="tiny muted" style="margin:0 0 8px">Ingen grenser ennå. Legg til en under – du kan ha flere.</p>';
+  const d=watchDayPct(s), px=num(s.price);
+  const sh=openSheet(`<h3>${esc(s.name)}</h3>
+    <p class="sub">${px>0?`${nf(px,2)} ${esc(s.cur||'')}${d!=null?` · ${pct(d)} i dag`:''}`:(s.ticker?'Henter kurs…':'Legg inn ticker under Meny → Aksjer og fond for å hente kurs')}${s.ticker?` · ${esc(s.ticker)}`:''}</p>
     <div class="sub" style="margin:6px 0 6px">Grenser for varsling</div>
     <div id="wrules">${rulesHtml()}</div>
     <button type="button" class="btn ghost full" id="wraddr">+ Legg til grense</button>
     <button class="btn solid full" id="wssave" style="margin-top:12px">Lagre</button>
-    <button class="btn danger full" id="wsdel" style="margin-top:8px">Slutt å følge</button>`);
+    ${hasTx||owned?`<button type="button" class="btn full" id="wsclear" style="margin-top:8px">Fjern alle grenser</button>`:`<button type="button" class="btn danger full" id="wsdel" style="margin-top:8px">Fjern aksjen fra listen</button>`}`);
   const readRules=()=>{ const out=[]; sh.querySelectorAll('.wrule').forEach(row=>{ const type=row.querySelector('.wrtype').value; const v=num(row.querySelector('.wrval').value); if(isFinite(v)) out.push({type,value:Math.abs(v)}); }); return out; };
-  function paint(cur){ w.rules=cur.map(r=>({type:r.type,value:r.value})); sh.querySelector('#wrules').innerHTML=rulesHtml(); wire(); }
-  function wire(){ sh.querySelectorAll('.wrdel').forEach(b=>b.onclick=()=>{ const i=+b.closest('.wrule').dataset.i; const cur=readRules(); cur.splice(i,1); paint(cur); });
-    sh.querySelectorAll('.wrval').forEach(inp=>inp.onchange=()=>{}); }
+  function paint(cur){ s.alerts=cur.map(r=>({type:r.type,value:r.value})); sh.querySelector('#wrules').innerHTML=rulesHtml(); wire(); }
+  function wire(){ sh.querySelectorAll('.wrdel').forEach(b=>b.onclick=()=>{ const i=+b.closest('.wrule').dataset.i; const cur=readRules(); cur.splice(i,1); paint(cur); }); }
   wire();
-  sh.querySelector('#wraddr').onclick=()=>{ const cur=readRules(); cur.push({type:'above',value:w.price>0?Math.round(w.price):0}); paint(cur); };
-  sh.querySelector('#wssave').onclick=()=>{ w.name=(sh.querySelector('#wsname').value||'').trim()||w.name;
-    const nt=(sh.querySelector('#wstick').value||'').trim().toUpperCase(); if(nt!==(w.ticker||'')){ w.ticker=nt; delete w.ySym; delete w.price; delete w.priceTs; delete w.prevClose; delete w.hist; }
-    w.rules=readRules().map(r=>({id:uid(),type:r.type,value:r.value})); save(); closeSheet(); render(); toast('Lagret');
-    if(typeof canFetch==='function'&&canFetch()){ fetchWatch(w).then(()=>{ save(); checkWatchAlerts(); render(); }); } };
-  sh.querySelector('#wsdel').onclick=()=>{ if(!confirmBox('Slutte å følge '+w.name+'?')) return; DB.watch=DB.watch.filter(x=>x.id!==id); save(); closeSheet(); render(); toast('Fjernet'); };
+  sh.querySelector('#wraddr').onclick=()=>{ const cur=readRules(); cur.push({type:'above',value:px>0?Math.round(px):0}); paint(cur); };
+  sh.querySelector('#wssave').onclick=()=>{ s.alerts=readRules().map(r=>({id:uid(),type:r.type,value:r.value})); save(); closeSheet(); render(); toast('Lagret');
+    if(typeof canFetch==='function'&&canFetch()&&s.ticker&&!(num(s.price)>0)){ refreshSec(s).then(()=>{ save(); checkWatchAlerts(); render(); }); } else checkWatchAlerts(); };
+  const clr=sh.querySelector('#wsclear'); if(clr) clr.onclick=()=>{ s.alerts=[]; save(); closeSheet(); render(); toast('Grenser fjernet'); };
+  const del=sh.querySelector('#wsdel'); if(del) del.onclick=()=>{ if(!confirmBox('Fjerne '+s.name+' fra listen?')) return; DB.secs=DB.secs.filter(x=>x.id!==id); save(); closeSheet(); render(); toast('Fjernet'); };
 }
 
 document.addEventListener('click',e=>{
@@ -2137,10 +2120,11 @@ document.addEventListener('click',e=>{
   else if(a==='adddiv'){ const p=pendingDivs(compute())[+b.dataset.i]; if(p) addPending([p]); }
   else if(a==='addalldiv') addPending(pendingDivs(compute()));
   else if(a==='gohome'){ view='home'; render(); scrollTo(0,0); }
-  else if(a==='watchadd') addWatchSheet();
-  else if(a==='watchedit') watchSheet(b.dataset.id);
+  else if(a==='watchadd') addFollowSheet();
+  else if(a==='watchedit') alertSheet(b.dataset.id);
   else if(a==='wnotify') ensureNotify();
-  else if(a==='gowatch'){ view='watch'; render(); scrollTo(0,0); }
+  else if(a==='gowatch'){ view='watch'; watchTab='list'; render(); scrollTo(0,0); }
+  else if(a==='followtab'){ watchTab=b.dataset.k; render(); scrollTo(0,0); }
   else if(a==='dismissall'){ pendingDivs(compute()).forEach(p=>{ (DB.dismissed[p.secId]=DB.dismissed[p.secId]||[]).push(p.exDate+'|'+p.accId); }); save(); render(); toast('Ignorert'); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeSheet(); });
