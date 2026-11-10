@@ -580,7 +580,12 @@ async function refreshSec(s, verbose){
   if(!canFetch()) return 'Sett opp mellomstasjonen (og ev. EODHD-nøkkel) under Meny → Datakilder for å hente automatisk.';
   const msgs=[];
   try{ const q=await getQuote(s); if(q&&q.price>0){ s.price=q.price; s.priceAt=q.time||(q.date?q.date+'T12:00:00':new Date().toISOString()); s.priceSrc=q.src||'auto';
-      if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur} (${q.src||'auto'})`); } else msgs.push('fant ingen kurs'); }
+      if(q.cur&&q.cur!==s.cur) msgs.push(`kilden oppgir kurs i ${q.cur}, aksjen står i ${s.cur}`); msgs.push(`kurs ${nf(q.price,2)} ${q.cur||s.cur} (${q.src||'auto'})`); }
+    else { let why;
+      if(isFund(s)&&!dataReady()) why='fond krever EODHD-nøkkel – legg den inn under Meny → Datakilder';
+      else if(isFund(s)) why='fant ingen fondskurs'+(s.eodErr?` – EODHD: ${s.eodErr}`:'')+(s.yahooErr?` · Yahoo: ${s.yahooErr}`:'');
+      else why='fant ingen kurs'+(s.yahooErr?` – Yahoo: ${s.yahooErr}`:'')+(s.eodErr?` · EODHD: ${s.eodErr}`:'');
+      msgs.push(why); } }
   catch(e){ msgs.push('kurs: '+e.message); }
   { const hd=Object.keys(s.hist||{}).sort(); msgs.push(hd.length?`historikk ${hd.length} dager (${prettyDate(hd[0])}–${prettyDate(hd[hd.length-1])})`:'ingen kurshistorikk'); }
   try{ const d=await getDividends(s); if(d){ DB.divCache[s.id]={at:new Date().toISOString(),items:d}; msgs.push(`${d.length} utbytter i historikken`); } }
