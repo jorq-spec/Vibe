@@ -1746,6 +1746,14 @@ function nowTime(){ const d=new Date(); return `${pad(d.getHours())}:${pad(d.get
 function shiftDay(key, delta){ const d=parseYmd(key); d.setDate(d.getDate()+delta); return ymd(d); }
 /* A sensible starting label for a newly logged item, based on the clock —
    always renamable afterward from the meal group's menu. */
+/* Meal picker shared by the log sheets: the four default meals plus any custom
+   meal already used that day, and a "New meal…" escape hatch. */
+function mealNamesFor(day){ day=day||foodDate||todayKey(); return [...new Set(['Breakfast','Lunch','Snack','Dinner',...((DB.food.entries[day]||[]).map(x=>x.meal).filter(Boolean))])]; }
+function mealFieldHtml(selId,newId,sel,day){ const names=mealNamesFor(day); if(sel&&!names.includes(sel)) names.push(sel);
+  return `<div class="field"><label>Meal</label><select id="${selId}">${names.map(m=>`<option${m===sel?' selected':''}>${esc(m)}</option>`).join('')}<option value="__new">New meal…</option></select></div>
+    <div class="field" id="${newId}f" style="display:none"><label>Name of the new meal</label><input id="${newId}" placeholder="e.g. Pre-workout"></div>`; }
+function wireMealField(sh,selId,newId){ const ms=sh.querySelector('#'+selId); if(!ms) return; ms.addEventListener('change',()=>{ const n=ms.value==='__new', f=sh.querySelector('#'+newId+'f'); if(f) f.style.display=n?'':'none'; if(n){ const i=sh.querySelector('#'+newId); if(i) i.focus(); } }); }
+function pickMeal(selId,newId,time){ const ms=document.querySelector('#'+selId); if(!ms) return defaultMealFor(time); let m=ms.value; if(m==='__new') m=(document.querySelector('#'+newId)?.value||'').trim(); return m||defaultMealFor(time); }
 function defaultMealFor(time){
   const h=parseInt((time||nowTime()).split(':')[0],10)||0;
   if(h<10) return 'Breakfast';
@@ -2060,6 +2068,8 @@ async function doSearch(){
   const mvt=searchMVT(q);
   const seen=new Set(); const merged=[];
   [...recipeHits, ...customHits, ...mvt, ...kas, ...off].forEach(r=>{ const k=r.ean||r.id; if(seen.has(k)) return; seen.add(k); merged.push(r); });
+  const logged=new Set(); Object.values(DB.food.entries).forEach(list=>(list||[]).forEach(e=>e.name&&logged.add(e.name.toLowerCase())));
+  merged.sort((a,b)=>(logged.has((a.name||'').toLowerCase())?0:1)-(logged.has((b.name||'').toLowerCase())?0:1));
   fResults=merged; fLoading=false; render();
   const inp=document.querySelector('#fq'); if(inp){ inp.focus(); const v=inp.value; inp.value=''; inp.value=v; }
 }
@@ -2120,6 +2130,7 @@ function logResultSheet(id, defaultQty){
     <h3>${esc(r.name)}</h3><p class="sh-sub">${esc(r.brand||'')}${r.brand?' · ':''}${esc(r.source)}</p>
     <div class="field"><label>${isR?'Servings':'Amount (g)'}</label>
       <input type="number" id="lgqty" value="${dq}" step="${isR?'0.5':'5'}" min="${isR?'0.25':'1'}"></div>
+    ${mealFieldHtml('lgmeal','lgnew',defaultMealFor(nowTime()),foodDate||todayKey())}
     <div class="card foodsum" id="lgpv" style="margin:10px 0"></div>
     <button class="btn primary full" data-act="dolog" data-id="${esc(id)}">Add to ${foodDate===todayKey()||!foodDate?"today's":esc(prettyDate(foodDate)).toLowerCase()+"'s"} log</button>
   </div>`);
@@ -2132,6 +2143,7 @@ function logResultSheet(id, defaultQty){
       <p class="tiny muted" style="margin-top:4px">${fmtK(n.protein)}g protein · ${fmtK(n.carbs)}g carbs · ${fmtK(n.fat)}g fat${n.fiber?' · '+fmtK(n.fiber)+'g fiber':''}</p>`;
   };
   sh.querySelector('#lgqty').addEventListener('input', upd); upd();
+  wireMealField(sh,'lgmeal','lgnew');
   setTimeout(()=>sh.querySelector('#lgqty').select(),100);
 }
 function barcodeSheet(){
@@ -2154,9 +2166,11 @@ function manualFoodSheet(){
       <div class="field" style="flex:1"><label>Fat (g)</label><input type="number" id="mff" value="0"></div>
     </div>
     <div class="field"><label>Fiber (g)</label><input type="number" id="mffiber" value="0"></div>
+    ${mealFieldHtml('mfmeal','mfnew',defaultMealFor(nowTime()),foodDate||todayKey())}
     <button class="btn primary full" data-act="domanual">Add to log</button>
     <button class="btn ghost full" data-act="addnewfood" data-ctx="manual" style="margin-top:8px">Add as a reusable food instead</button></div>`);
   const sh=openSheet(c);
+  wireMealField(sh,'mfmeal','mfnew');
   setTimeout(()=>sh.querySelector('#mfname').focus(),100);
 }
 /* A food entered once here shows up in every search from then on — the right
@@ -3698,7 +3712,7 @@ function bind(){
         if(!name){ toast('Give it a name first'); return; }
         const amt=(document.querySelector('#mfamt').value||'').trim();
         const now=nowTime();
-        const entry={id:uid(), time:now, meal:defaultMealFor(now), name, brand:amt, source:'manual',
+        const entry={id:uid(), time:now, meal:pickMeal('mfmeal','mfnew',now), name, brand:amt, source:'manual',
           kcal:Math.round(parseFloat(document.querySelector('#mfkcal').value)||0),
           protein:round1(parseFloat(document.querySelector('#mfp').value)||0),
           carbs:round1(parseFloat(document.querySelector('#mfc').value)||0),
@@ -3715,12 +3729,12 @@ function bind(){
         const now2=nowTime();
         let entry;
         if(r.isRecipe){
-          entry={id:uid(), time:now2, meal:defaultMealFor(now2), name:r.name, brand:'Recipe', source:'recipe',
+          entry={id:uid(), time:now2, meal:pickMeal('lgmeal','lgnew',now2), name:r.name, brand:'Recipe', source:'recipe',
             kcal:Math.round(r.perServing.kcal*qv), protein:round1(r.perServing.protein*qv),
             carbs:round1(r.perServing.carbs*qv), fat:round1(r.perServing.fat*qv), fiber:round1(r.perServing.fiber*qv), qty:qv, unit:'serving'};
         } else {
           const n=scaleNut(r.per100, qv);
-          entry={id:uid(), time:now2, meal:defaultMealFor(now2), name:r.name, brand:r.brand, source:r.source,
+          entry={id:uid(), time:now2, meal:pickMeal('lgmeal','lgnew',now2), name:r.name, brand:r.brand, source:r.source,
             kcal:n.kcal, protein:n.protein, carbs:n.carbs, fat:n.fat, fiber:n.fiber, qty:qv, unit:'g', per100:r.per100};
         }
         const day=foodDate||todayKey();
