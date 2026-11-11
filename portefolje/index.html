@@ -606,8 +606,11 @@ async function refreshAll(manual=true){
     if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=heldAll();
-    /* what you own now first, so the free daily quota goes where it matters */
-    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)||(s.alerts&&s.alerts.length))).sort((a,b)=>(!!held[b.id])-(!!held[a.id]));
+    /* Funds (and anything set to EODHD) use the limited daily quota, so they go FIRST –
+       stocks come from free Yahoo and can wait. Held items before the rest within each. */
+    const eodNeed=s=>((isFund(s)||eodFirst())&&dataReady()&&!!eodSymbol(s))?1:0;
+    const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)||(s.alerts&&s.alerts.length)))
+      .sort((a,b)=>(eodNeed(b)-eodNeed(a))||((!!held[b.id])-(!!held[a.id])));
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
