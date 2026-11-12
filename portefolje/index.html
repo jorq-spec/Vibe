@@ -606,11 +606,11 @@ async function refreshAll(manual=true){
     if(DB.settings.proxy&&DB.proxyOld){ try{ const r=await fetchT(DB.settings.proxy.replace(/\/+$/,'')+'/'); const tx=await r.text(); if(r.ok&&/v2/.test(tx)){ DB.proxyOld=false; save(); } }catch(e){} }
     if(!canFetch()){ if(manual) toast('Valutakurser oppdatert. Sett opp mellomstasjonen under Meny → Datakilder for kurser og utbytte.'); return; }
     const held=heldAll();
-    /* Funds (and anything set to EODHD) use the limited daily quota, so they go FIRST –
-       stocks come from free Yahoo and can wait. Held items before the rest within each. */
-    const eodNeed=s=>((isFund(s)||eodFirst())&&dataReady()&&!!eodSymbol(s))?1:0;
+    /* Funds use the scarce EODHD daily quota, so they ALWAYS go first – no matter what the
+       stock source (Yahoo/EODHD) is set to. Stocks come after; held before the rest within each. */
+    const fundFirst=s=>(isFund(s)&&dataReady()&&!!eodSymbol(s))?1:0;
     const list=DB.secs.filter(s=>s.ticker&&(held[s.id]||DB.tx.some(t=>t.secId===s.id)||(s.alerts&&s.alerts.length)))
-      .sort((a,b)=>(eodNeed(b)-eodNeed(a))||((!!held[b.id])-(!!held[a.id])));
+      .sort((a,b)=>(fundFirst(b)-fundFirst(a))||((!!held[b.id])-(!!held[a.id])));
     let ok=0, fail=[], later=0; const log=[];
     if(!list.length){ DB.lastLog={at:new Date().toISOString(),rows:[{name:'–',msg:'Ingen aksjer eller fond har ticker/ISIN ennå'}]}; save();
       if(manual) toast('Ingen har ticker ennå – legg inn ticker (eller «Fyll inn tickere» under Beholdning)'); return; }
@@ -1465,7 +1465,7 @@ function sourcesSheet(){
       <div class="f" style="margin-bottom:8px"><label for="pk">${PROVIDER_KEY_LABEL} (for fond)</label><input id="pk" value="${esc(st.apiKey||'')}" placeholder="Lim inn nøkkelen" autocomplete="off"></div>
       <div class="row"><button class="btn sm" id="ptest">Lagre og test</button><span class="tiny muted" id="pres"></span></div>
       <div class="two" style="margin-top:10px"><div class="f" style="margin:0"><label for="pcap">EODHD-oppslag per dag</label><input id="pcap" inputmode="numeric" value="${esc(st.eodCap||20)}"><p class="hint">20 på gratisplanen. Med betalt plan: skriv grensen fra planen din.</p></div>
-        <div class="f" style="margin:0"><label>Aksjer hentes først fra</label><div class="seg" id="pprefer" style="margin:0"><button type="button" data-k="yahoo" aria-pressed="${st.prefer!=='eodhd'}">Yahoo</button><button type="button" data-k="eodhd" aria-pressed="${st.prefer==='eodhd'}">EODHD</button></div><p class="hint">Gjelder aksjer. Den andre brukes hvis den første ikke har aksjen. Fond hentes alltid fra EODHD først.</p></div></div>
+        <div class="f" style="margin:0"><label>Aksjer hentes først fra</label><div class="seg" id="pprefer" style="margin:0"><button type="button" data-k="yahoo" aria-pressed="${st.prefer!=='eodhd'}">Yahoo</button><button type="button" data-k="eodhd" aria-pressed="${st.prefer==='eodhd'}">EODHD</button></div><p class="hint">Gjelder bare aksjer. Fond hentes alltid fra EODHD først. På gratisplanen bør dette stå på Yahoo – velger du EODHD, bruker aksjene også av de 20 daglige oppslagene. EODHD for aksjer er mest for en betalt plan.</p></div></div>
       ${st.apiKey&&typeof budget==='function'?`<p class="tiny muted" style="margin:8px 0 0"><span id="pbudget">${budget()} av ${capDaily()} EODHD-oppslag igjen i dag.</span>${DB.lastRefresh?` Sist oppdatert ${prettyDate(DB.lastRefresh.slice(0,10))} kl. ${DB.lastRefresh.slice(11,16)} (UTC).`:' Ikke oppdatert ennå.'}</p>`:''}
       ${DB.lastLog&&DB.lastLog.rows?`<details style="margin-top:8px"><summary class="tiny" style="cursor:pointer;font-weight:650">Siste henting (${esc(prettyDate(DB.lastLog.at.slice(0,10)))})</summary>
         ${DB.lastLog.rows.map(r=>`<div class="tiny" style="padding:4px 0;border-top:1px solid var(--soft)"><b>${esc(r.name)}</b><br><span class="${/feil|avvist|ikke|fikk|fant ikke|brukt opp/i.test(r.msg)?'down':'muted'}">${esc(r.msg)}</span></div>`).join('')}</details>`:''}
