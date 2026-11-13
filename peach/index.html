@@ -630,6 +630,7 @@ let view='today';
 let mode='trening';     // 'trening' | 'food' -- which half of the app is showing
 let foodDate=null;      // the day the diary is showing
 let fq='';              // food search query
+let fShowRecipes=false; // showing the recipe list in the search results area
 let fResults=null;      // last search results, null = not searched yet
 let fLoading=false;
 let openRecipe=null;
@@ -1111,6 +1112,7 @@ function recipeServingNut(r){ const t=recipeTotals(r), n=Math.max(1,r.servings||
   return {kcal:Math.round(t.kcal/n), protein:round1(t.protein/n), carbs:round1(t.carbs/n), fat:round1(t.fat/n), fiber:round1(t.fiber/n)}; }
 
 async function doSearch(){
+  fShowRecipes=false;
   const q=(document.querySelector('#fq')?.value||fq||'').trim();
   fq=q;
   if(!q){ fResults=[]; render(); return; }
@@ -1163,17 +1165,44 @@ function renderResults(){
     <span class="fmacros2">${r.isRecipe?fmtK(r.perServing.kcal)+' kcal/serving':fmtK(r.per100.kcal)+' kcal/100g'}</span>
   </button>`).join('');
 }
+/* Live, offline filter of your own foods, recipes and recently-logged items as you
+   type. The online lookup (Kassalapp / Open Food Facts) still runs on the Search button. */
+function foodLocal(q){
+  const rq=(q||'').trim().toLowerCase(); if(!rq) return [];
+  const recipes=(DB.food.recipes||[]).filter(r=>r.ingredients&&r.ingredients.length&&r.name.toLowerCase().includes(rq))
+    .map(r=>({id:'recipe:'+r.id, name:r.name, brand:'Your recipe', source:'Recipe', isRecipe:true, perServing:recipeServingNut(r)}));
+  const custom=(DB.food.customFoods||[]).filter(c=>c.name.toLowerCase().includes(rq))
+    .map(c=>({id:'custom:'+c.id, name:c.name, brand:c.brand||'Your food', source:'Your food', per100:c.per100}));
+  const seen=new Set([...recipes,...custom].map(x=>x.name.toLowerCase()));
+  const freq=frequentFoods(100).filter(r=>r.name.toLowerCase().includes(rq)&&!seen.has(r.name.toLowerCase()))
+    .map(r=>({id:'freq:'+r.key, name:r.name, brand:r.brand, source:r.source, per100:r.per100, lastQty:r.lastQty}));
+  return [...recipes, ...custom, ...freq];
+}
+function renderLiveResults(){
+  const rows=(fResults||[]).map(r=>`<button class="fresult" data-act="pickresult" data-id="${esc(r.id)}">
+    <div class="body"><b>${esc(r.name)}</b><span>${esc(r.brand||'')}${r.brand?' · ':''}${esc(r.source)}</span></div>
+    <span class="fmacros2">${r.isRecipe?fmtK(r.perServing.kcal)+' kcal/serving':fmtK(r.per100.kcal)+' kcal/100g'}</span></button>`).join('');
+  return `<div class="sectitle" style="margin-top:6px">Your foods & recent</div>${rows||`<p class="tiny muted" style="padding:10px 2px">Nothing saved matches "${esc(fq)}" yet.</p>`}
+    <button class="btn ghost full" data-act="dosearch" style="margin-top:8px">${ICON.search} Search online for "${esc(fq)}"</button>`;
+}
+/* Called on every keystroke – updates only the results box, so the caret and focus stay put. */
+function foodLive(q){
+  fShowRecipes=false; fq=q; const box=document.getElementById('fresults'); if(!box) return;
+  if(!q.trim()){ fResults=null; box.innerHTML=renderResults(); return; }
+  fResults=foodLocal(q); box.innerHTML=renderLiveResults();
+}
 function viewFoodSearch(){
   return topbar('Search') + `<div class="wrap">
-    <div class="searchbar"><input type="search" id="fq" value="${esc(fq)}" placeholder="Search foods or brands…"></div>
+    <div class="searchbar"><input type="search" id="fq" value="${esc(fq)}" placeholder="Search foods or brands…" oninput="foodLive(this.value)"></div>
     <div class="grid2x2">
       <button class="btn sm" data-act="dosearch">${ICON.search} Search</button>
       <button class="btn sm" data-act="scanbar">📷 Scan barcode</button>
-      <button class="btn sm" data-act="addmanual">Custom</button>
+      <button class="btn sm" data-act="reciplist">🍲 Recipes</button>
       <button class="btn sm" data-act="meals">Meals</button>
+      <button class="btn sm" data-act="addmanual">Custom</button>
     </div>
     ${!DB.food.settings.kassalKey ? `<p class="tiny muted" style="margin:10px 2px 12px">Add a free Kassalapp key under Progress → API key for better Norwegian coverage. Open Food Facts works without one.</p>` : ''}
-    ${renderResults()}
+    <div id="fresults">${fShowRecipes&&fResults&&fResults.length?`<div class="sectitle" style="margin-top:6px">Recipes</div>`+renderResults():(fq&&fResults&&fResults.length&&!fLoading?renderLiveResults():renderResults())}</div>
   </div>`;
 }
 
@@ -2562,6 +2591,12 @@ function bind(){
     /* ---- food: weight ---- */
     if(a==='logweight') return weightSheet();
     if(a==='dosearch'){ doSearch(); return; }
+    if(a==='reciplist'){
+      const rs=(DB.food.recipes||[]).filter(r=>r.ingredients&&r.ingredients.length);
+      if(!rs.length){ toast('No recipes yet – make one first'); view='foodrecipes'; render(); return; }
+      fq=''; const inp=document.querySelector('#fq'); if(inp) inp.value='';
+      fResults=rs.map(r=>({id:'recipe:'+r.id, name:r.name, brand:'Your recipe', source:'Recipe', isRecipe:true, perServing:recipeServingNut(r)}));
+      fShowRecipes=true; render(); return; }
     if(a==='manualbarcode') return barcodeSheet();
     if(a==='scanbar') return scanSheet(t.dataset.ctx||null);
     if(a==='addmanual') return manualFoodSheet();
