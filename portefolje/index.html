@@ -669,7 +669,9 @@ async function liveTick(force){
     const held=heldAll(), bucket=Math.floor(Date.now()/3e5); let n=0, fail=[];
     for(const s of DB.secs){
       if(!held[s.id]&&!(s.alerts&&s.alerts.length)) continue; const sym=yahooSymbol(s); if(!sym) continue;
-      if(eodFirst()&&eodSymbol(s)) continue;
+      /* Yahoo intraday is free (no quota), so use it for every stock's live/today price –
+         even when EODHD is the chosen daily source. EODHD only gives end-of-day, so without
+         this the calendar never gets today's stock prices. */
       try{ const r=await fetchT(`${proxyBase('yahoo','')}/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=5m&_=${bucket}`);
         const m=(await r.json())?.chart?.result?.[0]?.meta; const p=Number(m?.regularMarketPrice);
         if(p>0){ s.price=p; s.priceSrc='Yahoo'; s.priceVia='Yahoo'; if(Number(m.chartPreviousClose)>0) s.prevClose=Number(m.chartPreviousClose);
@@ -1408,7 +1410,7 @@ async function getQuote(s){
   const eodReady=dataReady()&&eodSymbol(s);
   /* Funds (ISIN) are fetched from EODHD first – Yahoo rarely has Norwegian funds. Stocks follow the prefer-setting. */
   const eodPref=(eodFirst()||isFund(s))&&eodReady;
-  if(eodPref){ try{ return await getQuoteEod(s); }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
+  if(eodPref){ try{ const q=await getQuoteEod(s); if(q) return q; }catch(e){ if(!yahooMaybe(s)) throw e; s.eodErr=e.message; } }
   if(yahooReady()&&isFund(s)&&!fundYahoo(s)) await resolveFundYahoo(s);
   if(yahooReady()&&yahooFor(s)){
     if(s.priceVia==='Yahoo'&&s.priceTs&&Date.now()-s.priceTs<4*60e3&&s.price&&Object.keys(s.hist||{}).length>2) return {price:s.price,date:(s.priceAt||'').slice(0,10),time:s.priceAt,src:'Yahoo'};   // only skip a fetch made minutes ago
