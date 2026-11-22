@@ -56,6 +56,17 @@ html.dark .theme .sun{display:none} html:not(.dark) .theme .moon{display:none}
 .pills{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pills button{padding:11px 8px;font-size:13px;font-weight:700;color:var(--ink-2);background:var(--white);border:1px solid var(--line);border-radius:10px;cursor:pointer;text-align:center}
 .pills button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.melrec{display:flex;gap:9px;align-items:flex-start;margin-top:11px;padding:11px 13px;background:var(--acc-soft);border-radius:11px;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.melrec b{color:var(--acc-dark)}
+.melrec svg{width:17px;height:17px;flex:none;margin-top:1px;fill:none;stroke:var(--acc);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.melinfo{margin-top:11px;border:0;padding:0}
+.melinfo summary{font-size:12.5px;color:var(--ink-3)}
+.melinfo summary::before{content:"＋ "}
+.melinfo[open] summary::before{content:"－ "}
+.melinfo p{font-size:12.5px;color:var(--ink-2);line-height:1.5;margin:9px 0 0}
+.melinfo ul{margin:7px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink-2);line-height:1.5}
+.melinfo li{margin-bottom:5px}
+.melinfo b{color:var(--ink)}
 .chips{display:flex;gap:6px;margin-top:8px}
 .chips button{flex:1;padding:7px 4px;font-size:12.5px;font-weight:700;color:var(--ink-2);background:var(--acc-soft);border:1px solid transparent;border-radius:8px;cursor:pointer;font-variant-numeric:tabular-nums}
 .chips button.on{border-color:var(--acc);color:var(--acc-dark)}
@@ -114,6 +125,16 @@ details li{margin-bottom:7px}
       <h2>Stil</h2>
       <div class="pills" id="style"></div>
       <div class="hint" id="styleHint"></div>
+      <div class="melrec"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7c0-1.5 3.6-3 8-3s8 1.5 8 3-3.6 3-8 3-8-1.5-8-3Z"/><path d="M4 7v6c0 1.5 3.6 3 8 3s8-1.5 8-3V7"/></svg><div><b>Anbefalt mel:</b> <span id="styleMel"></span></div></div>
+      <details class="melinfo">
+        <summary>Mer om mel</summary>
+        <p>Melet styrer deigen nesten like mye som hydrering og heving. Det viktigste er <b>proteininnholdet</b> (glutenstyrken):</p>
+        <ul>
+          <li><b>Mye protein (12–14 %)</b> gir sterk gluten – tåler mye vann og lang heving, gir seig crust med god kant.</li>
+          <li><b>Lite protein (9–11 %)</b> gir mørere, sprøere deig, men tåler ikke lang heving like godt.</li>
+        </ul>
+        <p>«W»-tallet er et italiensk styrkemål: høy W (300+) til lang modning, lav W til raske deiger. <b>Tipo 00</b> sier noe om finheten på malingen, ikke styrken. To tommelfingerregler: sterkt mel suger mer vann (du kan kjøre høyere hydrering), og lengre heving krever sterkere mel.</p>
+      </details>
     </div>
 
     <div class="card">
@@ -204,10 +225,10 @@ details li{margin-bottom:7px}
 <script>
 const $=s=>document.querySelector(s);
 const STYLES={
-  napolitansk:{navn:'Napolitansk',hyd:62,salt:2.8,olje:0,sukker:0,dens:0.40,dia:30,ferment:{type:'kald',temp:4,val:2},tip:'Klassisk, luftig kant. Lite til ingen olje, høy varme.'},
-  newyork:{navn:'New York',hyd:63,salt:2.0,olje:2.5,sukker:1.5,dens:0.45,dia:33,ferment:{type:'kald',temp:4,val:2},tip:'Tynn midte, seig og foldbar. Litt olje og sukker.'},
-  tynn:{navn:'Tynn & sprø',hyd:58,salt:2.2,olje:3,sukker:0,dens:0.32,dia:32,ferment:{type:'kald',temp:4,val:1},tip:'Sprø og tynn (romana-stil). Lav hydrering, kjevles tynt.'},
-  pan:{navn:'Panpizza',hyd:75,salt:2.2,olje:4,sukker:0.5,dens:0.70,dia:26,ferment:{type:'kald',temp:4,val:1},tip:'Tjukk, luftig og oljerik focaccia-stil. Trykkes ut i form.'},
+  napolitansk:{navn:'Napolitansk',hyd:62,salt:2.8,olje:0,sukker:0,dens:0.40,dia:30,ferment:{type:'kald',temp:4,val:2},tip:'Klassisk, luftig kant. Lite til ingen olje, høy varme.',mel:'Tipo 00 pizzamel med høy styrke (W 300+). Manitoba-type til lang heving.'},
+  newyork:{navn:'New York',hyd:63,salt:2.0,olje:2.5,sukker:1.5,dens:0.45,dia:33,ferment:{type:'kald',temp:4,val:2},tip:'Tynn midte, seig og foldbar. Litt olje og sukker.',mel:'Sterkt brødmel / «bread flour», 12–13 % protein.'},
+  tynn:{navn:'Tynn & sprø',hyd:58,salt:2.2,olje:3,sukker:0,dens:0.32,dia:32,ferment:{type:'kald',temp:4,val:1},tip:'Sprø og tynn (romana-stil). Lav hydrering, kjevles tynt.',mel:'Vanlig hvetemel går fint. Litt durum/semule gir ekstra sprøhet.'},
+  pan:{navn:'Panpizza',hyd:75,salt:2.2,olje:4,sukker:0.5,dens:0.70,dia:26,ferment:{type:'kald',temp:4,val:1},tip:'Tjukk, luftig og oljerik focaccia-stil. Trykkes ut i form.',mel:'Sterkt mel med høyt protein – den høye hydreringen trenger god gluten.'},
 };
 const THK={tynn:0.8,vanlig:1.0,tykk:1.25};
 const ANT_CHIPS=[1,2,4,6,8];
@@ -254,6 +275,7 @@ function setStyle(k){ const st=STYLES[k]; S.style=k; S.hyd=st.hyd; S.salt=st.sal
   S.dia=st.dia; S.fermType=st.ferment.type; S.tmp=st.ferment.temp; S.dur=st.ferment.val;
   document.querySelectorAll('#style button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
   $('#styleHint').textContent=st.tip;
+  $('#styleMel').textContent=st.mel;
   syncFermUI(); syncInputs(); render();
 }
 function syncFermUI(){
