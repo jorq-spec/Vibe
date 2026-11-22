@@ -125,16 +125,6 @@ details li{margin-bottom:7px}
       <h2>Stil</h2>
       <div class="pills" id="style"></div>
       <div class="hint" id="styleHint"></div>
-      <div class="melrec"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7c0-1.5 3.6-3 8-3s8 1.5 8 3-3.6 3-8 3-8-1.5-8-3Z"/><path d="M4 7v6c0 1.5 3.6 3 8 3s8-1.5 8-3V7"/></svg><div><b>Anbefalt mel:</b> <span id="styleMel"></span></div></div>
-      <details class="melinfo">
-        <summary>Mer om mel</summary>
-        <p>Melet styrer deigen nesten like mye som hydrering og heving. Det viktigste er <b>proteininnholdet</b> (glutenstyrken):</p>
-        <ul>
-          <li><b>Mye protein (12–14 %)</b> gir sterk gluten – tåler mye vann og lang heving, gir seig crust med god kant.</li>
-          <li><b>Lite protein (9–11 %)</b> gir mørere, sprøere deig, men tåler ikke lang heving like godt.</li>
-        </ul>
-        <p>«W»-tallet er et italiensk styrkemål: høy W (300+) til lang modning, lav W til raske deiger. <b>Tipo 00</b> sier noe om finheten på malingen, ikke styrken. To tommelfingerregler: sterkt mel suger mer vann (du kan kjøre høyere hydrering), og lengre heving krever sterkere mel.</p>
-      </details>
     </div>
 
     <div class="card">
@@ -200,6 +190,16 @@ details li{margin-bottom:7px}
         <thead><tr><th>Ingrediens</th><th>Mengde</th><th>Baker's&nbsp;%</th></tr></thead>
         <tbody id="tbody"></tbody>
       </table>
+      <div class="melrec"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7c0-1.5 3.6-3 8-3s8 1.5 8 3-3.6 3-8 3-8-1.5-8-3Z"/><path d="M4 7v6c0 1.5 3.6 3 8 3s8-1.5 8-3V7"/></svg><div><b>Anbefalt mel:</b> <span id="styleMel"></span></div></div>
+      <details class="melinfo">
+        <summary>Mer om mel</summary>
+        <p>Melet styrer deigen nesten like mye som hydrering og heving. Det viktigste er <b>proteininnholdet</b> (glutenstyrken):</p>
+        <ul>
+          <li><b>Mye protein (12–14 %)</b> gir sterk gluten – tåler mye vann og lang heving, gir seig crust med god kant.</li>
+          <li><b>Lite protein (9–11 %)</b> gir mørere, sprøere deig, men tåler ikke lang heving like godt.</li>
+        </ul>
+        <p>«W»-tallet er et italiensk styrkemål: høy W (300+) til lang modning, lav W til raske deiger. <b>Tipo 00</b> sier noe om finheten på malingen, ikke styrken. To tommelfingerregler: sterkt mel suger mer vann (du kan kjøre høyere hydrering), og lengre heving krever sterkere mel.</p>
+      </details>
       <div class="guide" id="guide"></div>
       <div class="row noprint">
         <button class="btn solid" id="copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Kopier</button>
@@ -345,7 +345,9 @@ function recipeText(){
     S.fermType==='kald'?`Kaldheving ${S.tmp} °C i ${nf(S.dur,S.dur%1?1:0)} ${S.dur===1?'dag':'dager'}`:`Romheving ${S.tmp} °C i ${S.dur} timer`,
     '',
     ...r.rows.map(([n,g,p])=>`${n}: ${gramStr(g)}  (${nf(p,p<10?1:0)} %)`),
-    `Sum: ${Math.round(r.total)} g`];
+    `Sum: ${Math.round(r.total)} g`,
+    '',
+    `Mel: ${melRec(r.H,r.hyd,S.style,S.gf)}`];
   return lines.join('\n');
 }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),1600); }
