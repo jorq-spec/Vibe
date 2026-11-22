@@ -225,10 +225,10 @@ details li{margin-bottom:7px}
 <script>
 const $=s=>document.querySelector(s);
 const STYLES={
-  napolitansk:{navn:'Napolitansk',hyd:62,salt:2.8,olje:0,sukker:0,dens:0.40,dia:30,ferment:{type:'kald',temp:4,val:2},tip:'Klassisk, luftig kant. Lite til ingen olje, høy varme.',mel:'Tipo 00 pizzamel med høy styrke (W 300+). Manitoba-type til lang heving.'},
-  newyork:{navn:'New York',hyd:63,salt:2.0,olje:2.5,sukker:1.5,dens:0.45,dia:33,ferment:{type:'kald',temp:4,val:2},tip:'Tynn midte, seig og foldbar. Litt olje og sukker.',mel:'Sterkt brødmel / «bread flour», 12–13 % protein.'},
-  tynn:{navn:'Tynn & sprø',hyd:58,salt:2.2,olje:3,sukker:0,dens:0.32,dia:32,ferment:{type:'kald',temp:4,val:1},tip:'Sprø og tynn (romana-stil). Lav hydrering, kjevles tynt.',mel:'Vanlig hvetemel går fint. Litt durum/semule gir ekstra sprøhet.'},
-  pan:{navn:'Panpizza',hyd:75,salt:2.2,olje:4,sukker:0.5,dens:0.70,dia:26,ferment:{type:'kald',temp:4,val:1},tip:'Tjukk, luftig og oljerik focaccia-stil. Trykkes ut i form.',mel:'Sterkt mel med høyt protein – den høye hydreringen trenger god gluten.'},
+  napolitansk:{navn:'Napolitansk',hyd:62,salt:2.8,olje:0,sukker:0,dens:0.40,dia:30,ferment:{type:'kald',temp:4,val:2},tip:'Klassisk, luftig kant. Lite til ingen olje, høy varme.'},
+  newyork:{navn:'New York',hyd:63,salt:2.0,olje:2.5,sukker:1.5,dens:0.45,dia:33,ferment:{type:'kald',temp:4,val:2},tip:'Tynn midte, seig og foldbar. Litt olje og sukker.'},
+  tynn:{navn:'Tynn & sprø',hyd:58,salt:2.2,olje:3,sukker:0,dens:0.32,dia:32,ferment:{type:'kald',temp:4,val:1},tip:'Sprø og tynn (romana-stil). Lav hydrering, kjevles tynt.'},
+  pan:{navn:'Panpizza',hyd:75,salt:2.2,olje:4,sukker:0.5,dens:0.70,dia:26,ferment:{type:'kald',temp:4,val:1},tip:'Tjukk, luftig og oljerik focaccia-stil. Trykkes ut i form.'},
 };
 const THK={tynn:0.8,vanlig:1.0,tykk:1.25};
 const ANT_CHIPS=[1,2,4,6,8];
@@ -236,6 +236,20 @@ let S={style:'napolitansk',dia:30,ant:6,thk:'vanlig',hyd:62,salt:2.8,olje:0,sukk
   fermType:'kald',dur:2,tmp:4,yt:'torr'};
 
 function yeastIDY(H,T){ const r=Math.pow(2,(T-20)/8); return Math.min(2,Math.max(0.02,2.18/(Math.max(0.5,H)*r))); }
+/* Flour recommendation driven mainly by fermentation length (and hydration): the longer the
+   heving, the stronger the flour needs to be, or the gluten breaks down. */
+function melRec(H,hyd,style,gf){
+  if(gf) return 'Glutenfri melmiks til pizza/brød. Litt psyllium (ca. 3 %) gir struktur.';
+  const lvl=Math.max(H>=24?2:H>=8?1:0, hyd>=74?2:hyd>=68?1:0);
+  let s=lvl>=2 ? 'Sterkt mel: pizzamel «Tipo 00» eller Manitoba (høy glutenstyrke).'
+      : lvl===1 ? 'Vanlig hvetemel går, men pizzamel «Tipo 00» eller Manitoba gir mer seig, luftig deig.'
+      : 'Vanlig hvetemel (siktet) holder fint.';
+  const why = H>=24 ? ' Den lange hevingen krever sterk gluten.'
+      : hyd>=74 ? ' Den høye hydreringen trenger sterk gluten.'
+      : H<8 ? ' Kort heving tåler svakere mel.' : '';
+  const suf = style==='tynn' ? ' Litt durum/semule gir ekstra sprøhet.' : '';
+  return s+why+suf;
+}
 function calc(){
   const area=Math.PI*Math.pow(S.dia/2,2);
   const hyd=S.hyd+(S.gf?10:0);
@@ -268,6 +282,7 @@ function render(){
     ? `kaldheving på <b>${nf(S.tmp)} °C i ${nf(S.dur, S.dur%1?1:0)} ${S.dur===1?'dag':'dager'}</b>`
     : `romheving på <b>${nf(S.tmp)} °C i ${nf(S.dur,0)} timer</b>`;
   const other=S.yt==='fersk'?`${gramStr(r.mel*r.idy/100)} tørrgjær`:`${gramStr(r.mel*r.idy*3/100)} fersk gjær`;
+  $('#styleMel').textContent=melRec(r.H,r.hyd,S.style,S.gf);
   $('#guide').innerHTML=`<b>${STYLES[S.style].navn}</b> · ${fermTxt} · ${S.ant} ${S.ant===1?'ball':'baller'} à ${nf(Math.round(r.ball))} g${S.gf?' · glutenfritt':''}.<br>Tilsvarer ca. ${other}.`;
 }
 
@@ -275,7 +290,6 @@ function setStyle(k){ const st=STYLES[k]; S.style=k; S.hyd=st.hyd; S.salt=st.sal
   S.dia=st.dia; S.fermType=st.ferment.type; S.tmp=st.ferment.temp; S.dur=st.ferment.val;
   document.querySelectorAll('#style button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));
   $('#styleHint').textContent=st.tip;
-  $('#styleMel').textContent=st.mel;
   syncFermUI(); syncInputs(); render();
 }
 function syncFermUI(){
