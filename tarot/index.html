@@ -575,11 +575,11 @@ async function askGemini(prompt,opt={}){
   const model=opt.model||DB.settings.model||'gemini-3.6-flash';
   let r,j;
   try{
-    /* Newer "flash" models spend part of the token budget on internal thinking, which
-       can eat the whole budget and cut the visible answer off mid-sentence. Turn thinking
-       off for the summary and give plenty of room; retry bigger if it still gets cut. */
-    const gen={temperature:0.8, maxOutputTokens:opt.max||4096};
-    if(opt.noThink!==true) gen.thinkingConfig={thinkingBudget:0};
+    /* Newer "flash" models spend part of the token budget on internal thinking. Rather than
+       trying to switch thinking off (the setting differs per model and some reject it with an
+       "invalid argument" error), just give a generous budget so thinking AND the full answer
+       both fit, and retry even bigger if the model still reports it ran out. */
+    const gen={temperature:0.8, maxOutputTokens:opt.max||8192};
     r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {method:'POST',headers:{'content-type':'application/json','x-goog-api-key':DB.settings.key},
        body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:gen})});
@@ -587,9 +587,6 @@ async function askGemini(prompt,opt={}){
   }catch(e){ throw new Error(L('Fikk ikke kontakt med Google. Sjekk nettforbindelsen.','Could not reach Google. Check your connection.')); }
   if(!r.ok){
     const msg=j?.error?.message||('HTTP '+r.status);
-    /* some models don't accept thinkingConfig – retry once without it */
-    if(opt.noThink!==true && /thinking|thinkingBudget|thinkingConfig|thinkingLevel/i.test(msg))
-      return askGemini(prompt,{...opt,noThink:true});
     const raw=JSON.stringify(j?.error||{});
     const perMinute=/PerMinute|per minute/i.test(raw);
     if(/quota|RESOURCE_EXHAUSTED/i.test(msg)||r.status===429){
@@ -612,9 +609,9 @@ async function askGemini(prompt,opt={}){
   const cand=j.candidates?.[0];
   const text=(cand?.content?.parts||[]).map(p=>p.text||'').join('\n').trim();
   /* answer was cut off because the model ran out of output budget (often spent on thinking) –
-     try once more with thinking off and a bigger ceiling */
+     try once more with a much bigger ceiling */
   if(cand?.finishReason==='MAX_TOKENS' && !opt.bumped)
-    return askGemini(prompt,{...opt,bumped:true,noThink:true,max:8192});
+    return askGemini(prompt,{...opt,bumped:true,max:16384});
   return text;
 }
 
